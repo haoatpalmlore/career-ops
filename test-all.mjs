@@ -507,6 +507,139 @@ try {
   fail(`always_allow tests crashed: ${e.message}`);
 }
 
+// ── 12. SEEK AU PROVIDER (issue #753) ────────────────────────────
+// Tests the Seek AU provider contract. Failing tests here are expected until
+// providers/seek.mjs is implemented — that's the point. See issue #753 for the
+// full proposal. Architecture: HTTP-only provider parsing Seek's SSR'd
+// __NEXT_DATA__ JSON. No Playwright dependency. LinkedIn is explicitly out of
+// scope per CONTRIBUTING.md.
+
+console.log('\n12. Seek AU provider (issue #753)');
+
+if (fileExists('providers/seek.mjs')) {
+  pass('providers/seek.mjs exists');
+} else {
+  fail('providers/seek.mjs is missing — see issue #753');
+}
+
+let seekProvider = null;
+let seekModule = null;
+if (fileExists('providers/seek.mjs')) {
+  try {
+    seekModule = await import(pathToFileURL(join(ROOT, 'providers/seek.mjs')).href);
+    seekProvider = seekModule.default;
+    pass('providers/seek.mjs loads as ESM with a default export');
+  } catch (e) {
+    fail(`providers/seek.mjs failed to import: ${e.message.split('\n')[0]}`);
+  }
+}
+
+if (seekProvider) {
+  if (seekProvider.id === 'seek') {
+    pass('provider.id === "seek"');
+  } else {
+    fail(`provider.id is "${seekProvider.id}", expected "seek"`);
+  }
+
+  if (typeof seekProvider.detect === 'function') {
+    pass('provider.detect is a function');
+  } else {
+    fail('provider.detect is not a function (required by _types.js Provider contract)');
+  }
+
+  if (typeof seekProvider.fetch === 'function') {
+    pass('provider.fetch is a function');
+  } else {
+    fail('provider.fetch is not a function (required by _types.js Provider contract)');
+  }
+
+  // detect() contract: matches Seek URLs and explicit provider entries, rejects others.
+  if (typeof seekProvider.detect === 'function') {
+    try {
+      const seekByUrl = seekProvider.detect({
+        name: 'Seek AU — AI Engineer',
+        careers_url: 'https://www.seek.com.au/ai-engineer-jobs/in-All-Australia',
+      });
+      if (seekByUrl && seekByUrl.url) {
+        pass('detect() matches seek.com.au careers_url and returns { url }');
+      } else {
+        fail('detect() returned null for a valid seek.com.au URL');
+      }
+
+      const seekByExplicit = seekProvider.detect({
+        name: 'Seek AU — AI Engineer',
+        provider: 'seek',
+        query: 'AI Engineer',
+      });
+      if (seekByExplicit && seekByExplicit.url) {
+        pass('detect() matches explicit "provider: seek" entries');
+      } else {
+        fail('detect() returned null for explicit provider: seek entry');
+      }
+
+      const notSeek = seekProvider.detect({
+        name: 'Anthropic',
+        careers_url: 'https://job-boards.greenhouse.io/anthropic',
+      });
+      if (notSeek === null) {
+        pass('detect() returns null for non-Seek URLs (greenhouse)');
+      } else {
+        fail(`detect() incorrectly matched a greenhouse URL: ${JSON.stringify(notSeek)}`);
+      }
+    } catch (e) {
+      fail(`detect() threw on valid input: ${e.message.split('\n')[0]}`);
+    }
+  }
+
+  // Fixture-based parse test — only runs if both the fixture and a named
+  // parser export exist. The parser must be exported so it can be tested
+  // without spinning up the full fetch() pipeline.
+  if (fileExists('test/fixtures/seek-ai-engineer.html')) {
+    if (typeof seekModule.parseSeekHtml !== 'function') {
+      fail('parseSeekHtml is not exported from providers/seek.mjs (needed for offline fixture test)');
+    } else {
+      try {
+        const fixture = readFile('test/fixtures/seek-ai-engineer.html');
+        const jobs = seekModule.parseSeekHtml(fixture);
+
+        if (Array.isArray(jobs)) {
+          pass('parseSeekHtml returns an array');
+        } else {
+          fail(`parseSeekHtml returned ${typeof jobs}, expected array`);
+        }
+
+        if (Array.isArray(jobs) && jobs.length > 0) {
+          pass(`parseSeekHtml extracted ${jobs.length} job(s) from fixture`);
+
+          const first = jobs[0];
+          const hasShape =
+            typeof first.title === 'string' && first.title.length > 0 &&
+            typeof first.url === 'string' && first.url.startsWith('https://') &&
+            typeof first.company === 'string' &&
+            typeof first.location === 'string';
+          if (hasShape) {
+            pass('First job conforms to Job shape (title, url, company, location)');
+          } else {
+            fail(`First job missing required fields: ${JSON.stringify(first)}`);
+          }
+
+          if (first.url && first.url.includes('seek.com.au/job/')) {
+            pass('Job URL matches seek.com.au/job/{id} pattern');
+          } else {
+            fail(`Job URL does not match seek.com.au/job/{id}: ${first.url}`);
+          }
+        } else if (Array.isArray(jobs)) {
+          fail('parseSeekHtml returned 0 jobs from fixture (expected >0)');
+        }
+      } catch (e) {
+        fail(`parseSeekHtml threw on fixture input: ${e.message.split('\n')[0]}`);
+      }
+    }
+  } else {
+    warn('test/fixtures/seek-ai-engineer.html missing — skipping fixture parse test');
+  }
+}
+
 // ── SUMMARY ─────────────────────────────────────────────────────
 
 console.log('\n' + '='.repeat(50));
