@@ -61,7 +61,7 @@ export function parseManifest(tsv) {
     const c = line.split('\t');
     if (c.length < 3) continue;
     rows.push({ id: c[0].trim(), fixture: c[1].trim(), expect: c[2].trim(),
-                origin: (c[3] || '').trim(), note: (c[4] || '').trim() });
+                expectError: (c[3] || '').trim(), origin: (c[4] || '').trim(), note: (c[5] || '').trim() });
   }
   return rows;
 }
@@ -72,8 +72,22 @@ function runSelfTests() {
     if (!existsSync(join(HERE, s))) return { name: s, ok: false, detail: 'script missing' };
     try {
       const out = execFileSync('node', [join(HERE, s), '--self-test'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      // Exit 0 is NOT sufficient. If the --self-test seam is dropped during a
+      // rebase, the script falls through to its default path, prints its normal
+      // output and exits 0 — a false pass in precisely the scenario this harness
+      // exists to catch. Demand a pass marker in the output.
+      // Two accepted markers: the fork's "N/N passed" and upstream's
+      // "<name> self-test OK". A fall-through prints neither (it prints the
+      // script's normal output), so both a dropped seam and a silent partial
+      // failure are still caught.
       const m = out.match(/(\d+)\/(\d+) passed/);
-      return { name: s, ok: true, detail: m ? `${m[1]}/${m[2]} assertions` : out.trim().split('\n').pop().slice(0, 60) };
+      const upstreamMarker = /self-test OK/.test(out);
+      if (!m && !upstreamMarker) {
+        return { name: s, ok: false,
+                 detail: `exited 0 but printed no self-test marker — is the --self-test seam still wired? got: ${out.trim().split('\n').pop().slice(0, 50)}` };
+      }
+      if (m && m[1] !== m[2]) return { name: s, ok: false, detail: `${m[1]}/${m[2]} assertions passed` };
+      return { name: s, ok: true, detail: m ? `${m[1]}/${m[2]} assertions` : 'self-test OK (upstream format)' };
     } catch (e) {
       return { name: s, ok: false, detail: String(e.stderr || e.stdout || e.message).trim().split('\n').pop().slice(0, 120) };
     }
@@ -83,16 +97,31 @@ function runSelfTests() {
 async function runRegression() {
   const manifestPath = join(REG, 'MANIFEST.tsv');
   if (!existsSync(manifestPath)) return [{ name: 'corpus', ok: false, detail: 'regression/MANIFEST.tsv missing' }];
-  const { verify } = await import('./verify-evaluation.mjs');
+  let verify;
+  try {
+    ({ verify } = await import('./verify-evaluation.mjs'));
+  } catch (e) {
+    // The harness must report a missing/broken fork file, not die on it —
+    // otherwise it goes silent exactly when something disappeared.
+    return [{ name: 'corpus', ok: false, detail: `cannot load verify-evaluation.mjs: ${String(e.message).split('\n')[0].slice(0, 100)}` }];
+  }
   return parseManifest(readFileSync(manifestPath, 'utf8')).map(row => {
     const p = join(REG, row.fixture);
     if (!existsSync(p)) return { name: row.id, ok: false, detail: `fixture missing: ${row.fixture}` };
     const r = verify(readFileSync(p, 'utf8'), row.fixture);
     const got = r.ok ? 'pass' : 'fail';
-    const firstErr = (r.issues.find(i => i.level === 'error') || {}).msg || '';
-    return { name: row.id, ok: got === row.expect,
-             detail: got === row.expect ? `${got} as expected — ${row.origin}` : `expected ${row.expect}, got ${got}`,
-             caught: firstErr.slice(0, 90) };
+    const errs = r.issues.filter(i => i.level === 'error').map(i => i.msg);
+    if (got !== row.expect) {
+      return { name: row.id, ok: false, detail: `expected ${row.expect}, got ${got}`, caught: (errs[0] || '').slice(0, 90) };
+    }
+    // A fixture that fails for the wrong reason is not pinning its rule. r1
+    // trips three separate errors; without this, deleting the Score Breakdown
+    // rule leaves r1 failing on the other two and the corpus still reports ok.
+    if (row.expectError && !errs.some(m => m.includes(row.expectError))) {
+      return { name: row.id, ok: false,
+               detail: `fails, but not on its own rule — expected an error containing "${row.expectError}", got: ${errs.join(' | ').slice(0, 90)}` };
+    }
+    return { name: row.id, ok: true, detail: `${got} as expected — ${row.origin}`, caught: (errs[0] || '').slice(0, 90) };
   });
 }
 
@@ -110,7 +139,6 @@ function runInvariants() {
   const EXPECTED_MODIFIED = {
     'upskill.mjs': 'integration seams for archetype weighting — the five named in LOCAL-CHANGES.md',
     'update-system.mjs': 'USER_PATHS registration; fork files must be never-touch, not upstream-fetched',
-    '.gitignore': 'pre-existing local change, not part of this work',
   };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
@@ -124,8 +152,15 @@ function runInvariants() {
                detail: unexpected.length
                  ? `unexpected upstream file(s) modified: ${unexpected.join(', ')} — justify in LOCAL-CHANGES.md and add to EXPECTED_MODIFIED`
                  : `${modified.length} upstream file(s), all expected: ${modified.join(', ')}` });
-  } catch {
-    out.push({ name: 'rebase conflict surface', ok: true, detail: 'no upstream remote — not evaluated' });
+  } catch (e) {
+    // Distinguish "there is no upstream to compare against" (genuinely not
+    // applicable) from "the comparison broke" (a guard that cannot run must not
+    // report a pass).
+    const msg = String(e.stderr || e.message || '');
+    const noUpstream = /unknown revision|not a valid object name|no such ref|ambiguous argument 'upstream/i.test(msg);
+    out.push({ name: 'rebase conflict surface', ok: noUpstream,
+               detail: noUpstream ? 'no upstream remote — not applicable'
+                                  : `could not evaluate: ${msg.split('\n')[0].slice(0, 90)}` });
   }
 
   // Upstream owns a coverage guard asserting every tracked file is claimed by
@@ -204,7 +239,7 @@ function printReport(r) {
 
 function selfTest() {
   const t = []; const ok = (n, c) => t.push({ n, pass: !!c });
-  const man = parseManifest('# c\nr1\tfix.md\tfail\torigin\tnote\nr2\tb.md\tpass\to2\tn2\n\nbad');
+  const man = parseManifest('# c\nr1\tfix.md\tfail\terr\torigin\tnote\nr2\tb.md\tpass\te2\to2\tn2\n\nbad');
   ok('parseManifest skips comments and blanks', man.length === 2);
   ok('parseManifest reads fields', man[0].id === 'r1' && man[0].expect === 'fail' && man[0].origin === 'origin');
   const before = { groups: { invariants: [{ name: 'a', ok: true }, { name: 'gone', ok: true }], regression: [], selftests: [] }, metrics: { logged: 32 } };
@@ -216,6 +251,10 @@ function selfTest() {
   ok('diff reports metric drift', d.drift.some(x => x.metric === 'logged' && x.from === 32 && x.to === 35));
   ok('metric drift alone is not a failure', diffSnapshots({ groups: {}, metrics: { logged: 1 } }, { groups: {}, metrics: { logged: 9 } }).ok === true);
   ok('broken check fails the diff', d.ok === false);
+  {
+    const rows = parseManifest('r1\tf.md\tfail\tno ## Score Breakdown\torigin\tnote');
+    ok('parseManifest reads expectError column', rows[0].expectError === 'no ## Score Breakdown' && rows[0].origin === 'origin');
+  }
   const fail = t.filter(x => !x.pass);
   for (const x of t) console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.n}`);
   console.log(`\n${t.length - fail.length}/${t.length} passed`);
@@ -248,7 +287,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const r = await collect();
     const snapIdx = argv.indexOf('--snapshot');
     if (snapIdx !== -1) {
-      const p = argv[snapIdx + 1] || 'system-snapshot.json';
+      const next = argv[snapIdx + 1];
+      const p = (next && !next.startsWith('--')) ? next : 'system-snapshot.json';
       writeFileSync(p, JSON.stringify(r, null, 2));
       console.log(`snapshot written: ${p}  (${r.ok ? 'PASS' : 'FAIL'}, ${r.failed} failing)`);
       process.exit(0);

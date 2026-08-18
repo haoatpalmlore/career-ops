@@ -47,8 +47,8 @@
  *                            [--hook retail|level|domain|none] [--gates N]
  *                            [--score X.X] [--tracker <num>] [--date YYYY-MM-DD]
  *                            [--note "..."]
- *      node apply-log.mjs outcome --company <name> [--role <title>] --set <outcome>
- *                                 [--date YYYY-MM-DD]
+ *      node apply-log.mjs outcome (--company <name> [--role <title>] | --tracker <num>)
+ *                                 --set <outcome> [--date YYYY-MM-DD]
  *      node apply-log.mjs backfill [--commit]     seed from data/applications.md
  *      node apply-log.mjs                          (JSON)
  *      node apply-log.mjs --summary                (funnel, true denominator)
@@ -335,25 +335,45 @@ function cmdAdd(a) {
 }
 
 function cmdOutcome(a) {
-  if (!a.company || a.company === true) { console.error('error: --company is required'); process.exit(1); }
+  const byTracker = a.tracker && a.tracker !== true;
+  if (!byTracker && (!a.company || a.company === true)) {
+    console.error('error: --company or --tracker is required');
+    console.error('hint: agency-mediated rows all carry company "?" — use --tracker <num> for those');
+    process.exit(1);
+  }
   if (!a.set || !OUTCOMES.includes(a.set)) {
     console.error(`error: --set must be one of ${OUTCOMES.join('|')}`); process.exit(1);
   }
   const raw = readLog();
   const lines = raw.split('\n');
-  const wantCo = a.company.toLowerCase();
+  const wantCo = byTracker ? null : a.company.toLowerCase();
   const wantRole = (a.role && a.role !== true) ? a.role.toLowerCase() : null;
-  let hitIdx = -1;
+  const matches = [];
   for (let i = lines.length - 1; i >= 0; i--) {
     const t = lines[i];
     if (!t.trim() || t.trim().startsWith('#')) continue;
     const c = t.split('\t');
     if (c.length < 4) continue;
-    if (c[1].trim().toLowerCase() !== wantCo) continue;
-    if (wantRole && !c[2].trim().toLowerCase().includes(wantRole)) continue;
-    hitIdx = i; break;
+    if (byTracker) { if ((c[7] || '').trim() !== String(a.tracker)) continue; }
+    else {
+      if (c[1].trim().toLowerCase() !== wantCo) continue;
+      if (wantRole && !c[2].trim().toLowerCase().includes(wantRole)) continue;
+    }
+    matches.push(i);
   }
-  if (hitIdx < 0) { console.error(`error: no log row for company "${a.company}"${wantRole ? ` + role "${a.role}"` : ''}`); process.exit(1); }
+  if (matches.length === 0) {
+    console.error(byTracker ? `error: no log row with tracker ${a.tracker}`
+                            : `error: no log row for company "${a.company}"${wantRole ? ` + role "${a.role}"` : ''}`);
+    process.exit(1);
+  }
+  // Refuse an ambiguous selector rather than silently taking the newest row —
+  // marking the wrong application rejected corrupts the only outcome signal.
+  if (matches.length > 1) {
+    console.error(`error: ${matches.length} rows match. Narrow it with --role or --tracker:`);
+    for (const i of matches) { const c = lines[i].split('\t'); console.error(`  tracker=${c[7]} ${c[1]} — ${c[2]} (${c[0]})`); }
+    process.exit(1);
+  }
+  const hitIdx = matches[0];
   const c = lines[hitIdx].split('\t');
   while (c.length < COLS.length) c.push('-');
   c[8] = a.set;
@@ -499,6 +519,17 @@ function selfTest() {
      { company: 'Beta', resolved: 'rejected' }]);
   ok('calibrate counts held/broke', cal.held === 1 && cal.broke === 0);
   ok('calibrate refuses ambiguous join', cal.judged.some(j => j.verdict === 'unjoinable'));
+  {
+    // Ambiguity must be refused, not resolved by recency: every agency posting
+    // is company "?", so a bare --company selector would hit the wrong row.
+    const rows = [
+      '2026-01-01\t?\tRole A\tagency\tnone\t-\t-\t185\tpending\t-\t-',
+      '2026-01-02\t?\tRole B\tagency\tnone\t-\t-\t190\tpending\t-\t-',
+    ].join('\n');
+    const parsed = parseLog(rows).rows;
+    ok('confidential rows share company "?"', parsed.length === 2 && parsed.every(r => r.company === '?'));
+    ok('tracker distinguishes them', parsed[0].tracker === '185' && parsed[1].tracker === '190');
+  }
   ok('calibrate marks unapplied', cal.judged.some(j => j.verdict === 'unapplied'));
   {
     // Confidential employers all carry "?" as company; a name join would fuse

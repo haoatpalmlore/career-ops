@@ -376,6 +376,7 @@ export const USER_PATHS = [
   'system-check.mjs',
   'upskill-ext.mjs',
   'LOCAL-CHANGES.md',
+  'WORKED-EXAMPLE.md',
   'regression/',
 ];
 

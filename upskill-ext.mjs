@@ -129,7 +129,16 @@ import { fileURLToPath, pathToFileURL } from 'url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-export function runRequirementsCli(argv, aggregateGaps) {
+// Read upstream's SCHEMA_VERSION textually rather than importing upskill.mjs:
+// that module runs its CLI at module scope, so importing it hijacks argv.
+const SCHEMA_VERSION_FALLBACK = (() => {
+  try {
+    const m = readFileSync(join(HERE, 'upskill.mjs'), 'utf8').match(/SCHEMA_VERSION\s*=\s*(\d+)/);
+    return m ? Number(m[1]) : null;
+  } catch { return null; }
+})();
+
+export function runRequirementsCli(argv, schemaVersion = null) {
   const REQ_FILE = join(HERE, 'data/role-requirements.tsv');
   if (!existsSync(REQ_FILE)) {
     console.error('No data/role-requirements.tsv found. Run critic-mode evaluations first.');
@@ -146,13 +155,18 @@ export function runRequirementsCli(argv, aggregateGaps) {
         c.label + (c.variants > 1 ? `  [${c.variants} wordings]` : ''));
   }
   } else {
-    console.log(JSON.stringify({ schema_version: 1, clusters }, null, 2));
+    console.log(JSON.stringify({ schema_version: schemaVersion, clusters }, null, 2));
   }
   process.exit(0);
 }
 
 export function selfTest() {
   const failures = [];
+  let asserted = 0;
+  // Counting every assertion, not a hand-maintained number: system-check.mjs
+  // greps for the "N/N passed" marker, and a stale literal there is both a lie
+  // on the dashboard and (since the marker is the pass signal) a way to fake one.
+  const check = (cond, msg) => { asserted += 1; if (!cond) failures.push(msg); };
   const fail = m => failures.push(m);
 
   const targets = parseTargetArchetypes([
@@ -160,14 +174,14 @@ export function selfTest() {
     '    - name: "AI Solutions Architect"', '      level: "Staff"', '      fit: "primary"',
     '    - name: "AI Platform / LLMOps Engineer"', '      fit: "secondary"',
   ].join('\n'));
-  if (targets.length !== 2) fail(`parseTargetArchetypes expected 2, got ${targets.length}`);
-  if (targets[0] && targets[0].fit !== 'primary') fail('parseTargetArchetypes lost fit level');
+  check(!(targets.length !== 2), `parseTargetArchetypes expected 2, got ${targets.length}`);
+  check(!(targets[0] && targets[0].fit !== 'primary'), 'parseTargetArchetypes lost fit level');
 
-  if (archetypeRelevance('AI Solutions Architect', targets) !== 1.0) fail('primary should weigh 1.0');
-  if (archetypeRelevance('AI Platform / LLMOps Engineer', targets) !== 0.6) fail('secondary should weigh 0.6');
-  if (archetypeRelevance('Frontend Engineer', targets) !== 0.15) fail('off-target should weigh 0.15');
-  if (archetypeRelevance(null, targets) !== 0.15) fail('missing archetype should weigh 0.15');
-  if (archetypeRelevance('AI Solutions Architect', []) !== 0.15) fail('no targets should weigh 0.15');
+  check(!(archetypeRelevance('AI Solutions Architect', targets) !== 1.0), 'primary should weigh 1.0');
+  check(!(archetypeRelevance('AI Platform / LLMOps Engineer', targets) !== 0.6), 'secondary should weigh 0.6');
+  check(!(archetypeRelevance('Frontend Engineer', targets) !== 0.15), 'off-target should weigh 0.15');
+  check(!(archetypeRelevance(null, targets) !== 0.15), 'missing archetype should weigh 0.15');
+  check(!(archetypeRelevance('AI Solutions Architect', []) !== 0.15), 'no targets should weigh 0.15');
 
   if (normalizeRequirement('Executive engagement at CTO / VP level') !==
       normalizeRequirement('executive engagement at cto   vp level')) {
@@ -177,7 +191,7 @@ export function selfTest() {
       normalizeRequirement('enterprise presales customerfacing')) {
     fail('normalizeRequirement should collapse pre-sales/customer-facing synonyms');
   }
-  if (normalizeRequirement('   ') !== '') fail('normalizeRequirement should return empty for blanks');
+  check(!(normalizeRequirement('   ') !== ''), 'normalizeRequirement should return empty for blanks');
 
   const roll = rollupRequirements([
     '10\tAcme\tSA\tSOFT\tEnterprise pre-sales / customer facing\tGAP\tBuilding\t-',
@@ -186,21 +200,18 @@ export function selfTest() {
     '13\tDel\tSA\tSOFT\tExecutive engagement\tPARTIAL\tBuilding\t-',
   ].join('\n'));
   const presales = roll.find(c => c.total === 2);
-  if (!presales) fail('rollupRequirements should cluster the two pre-sales wordings');
-  if (presales && (presales.roles !== 2 || presales.variants !== 2)) fail('cluster counts wrong');
-  if (roll.some(c => c.key.includes('kubernetes'))) fail('rollupRequirements must skip HAVE rows');
-  if (!roll.some(c => c.partial === 1)) fail('rollupRequirements should keep PARTIAL rows');
+  check(!(!presales), 'rollupRequirements should cluster the two pre-sales wordings');
+  check(!(presales && (presales.roles !== 2 || presales.variants !== 2)), 'cluster counts wrong');
+  check(!(roll.some(c => c.key.includes('kubernetes'))), 'rollupRequirements must skip HAVE rows');
+  check(!(!roll.some(c => c.partial === 1)), 'rollupRequirements should keep PARTIAL rows');
 
-  if (failures.length > 0) {
-    console.error(`upskill-ext self-test failed: ${failures.join('; ')}`);
-    process.exit(1);
-  }
-  console.log(`upskill-ext self-test OK (${11} assertions: archetype relevance, requirement clustering)`);
-  process.exit(0);
+  for (const f of failures) console.error(`FAIL  ${f}`);
+  console.log(`${asserted - failures.length}/${asserted} passed (archetype relevance, requirement clustering)`);
+  process.exit(failures.length ? 1 : 0);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if (process.argv.includes('--self-test')) selfTest();
-  else if (process.argv.includes('--requirements')) runRequirementsCli(process.argv.slice(2));
+  else if (process.argv.includes('--requirements')) runRequirementsCli(process.argv.slice(2), SCHEMA_VERSION_FALLBACK);
   else console.log('usage: node upskill-ext.mjs --requirements [--summary] | --self-test');
 }
