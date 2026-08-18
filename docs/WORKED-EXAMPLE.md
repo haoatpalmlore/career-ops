@@ -217,6 +217,6 @@ The same evaluation produced three different numbers on the same day:
 Every drop was forced by a mechanism, not by anyone changing their mind. That is the
 property worth reproducing — not the number.
 
-Regression fixtures for all three states live in `tests/regression/`
+Regression fixtures for all three states live in `regression/`
 (`r1-185-no-breakdown.md`, `r2-185-no-case-against.md`, `r3-185-compliant.md`), so a future
 change that would let 3.9 through again fails the corpus.

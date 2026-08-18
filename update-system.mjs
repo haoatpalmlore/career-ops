@@ -450,6 +450,28 @@ export const USER_PATHS = [
   'opencode.json',
   '.claude/settings.json',
   '.claude/hooks/',
+
+  // Fork-local additions (haoatpalmlore/career-ops). Code, not user content,
+  // but they belong here and NOT in SYSTEM_PATHS. SYSTEM_PATHS means fetched
+  // from the upstream ref on apply, and none of these exist upstream:
+  // registering them there points apply at a pathspec the remote tree does not
+  // contain, and removeAdditionsNotInHead treats a SYSTEM_PATHS entry absent
+  // from HEAD as an addition to clean up. The updater would delete this fork
+  // own tooling on rollback. USER_PATHS is the never-touch invariant, which is
+  // exactly the guarantee these need, and the list already holds locally-owned
+  // operational files of the same kind (.claude/hooks/, opencode.json,
+  // plugins.local/). If any of these are merged upstream, move them to
+  // SYSTEM_PATHS at that point. See LOCAL-CHANGES.md.
+  //
+  // NOTE: keep this comment free of apostrophes and quote characters.
+  // extractArrayFromSource pairs quote chars across the whole array body, so a
+  // single apostrophe here mis-parses every entry below it.
+  'apply-log.mjs',
+  'verify-evaluation.mjs',
+  'system-check.mjs',
+  'upskill-ext.mjs',
+  'LOCAL-CHANGES.md',
+  'regression/',
 ];
 
 // Local user layer — a fork's own files, declared OUTSIDE the system layer.
