@@ -15,10 +15,38 @@ Run `node system-check.mjs` to assert all of this still holds.
 | `verify-evaluation.mjs` | **new** | none | Structural validator: breakdown arithmetic, lift cap, score agreement, Case Against, falsifier. |
 | `upskill-ext.mjs` | **new** | none | Archetype relevance weighting and requirement clustering, lifted out of `upskill.mjs` specifically to shrink the conflict surface. |
 | `system-check.mjs` | **new** | none | Self-evaluation and before/after-update diffing. |
-| `tests/regression/` | **new** | none | Eight fixtures, each a real failure this system made. |
+| `regression/` | **new** | none | Eight fixtures, each a real failure this system made. |
 | `upskill.mjs` | **modified** | **the only real one** | `+42 -5` against merge-base — integration seams only (thread `archetype` through, accept a relevance function, delegate `--requirements`). Was `+195` before the extraction. |
 | `modes/_custom.md` | symlink | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives in the data layer, outside the repo — an update cannot reach it. |
 | `data/application-log.tsv` | symlink | none | User layer. |
+| `update-system.mjs` | **modified** | low | Five fork files registered in `USER_PATHS`. See below. |
+
+## Why the fork files are in `USER_PATHS`, not `SYSTEM_PATHS`
+
+`validate-system-paths-coverage.mjs` requires every tracked file to be claimed by one list
+or the other, and `test-all.mjs` fails until it is. The obvious reading is that `.mjs`
+scripts are system layer, so they belong in `SYSTEM_PATHS`. **That is wrong for a fork**, and
+would be destructive:
+
+- `SYSTEM_PATHS` means *fetched from the upstream ref on `apply`*. None of these files exist
+  upstream, so `apply` would point at a pathspec the remote tree does not contain.
+- `removeAdditionsNotInHead(pathspec)` treats a `SYSTEM_PATHS` entry absent from HEAD as an
+  addition to clean up. On rollback, the updater would **delete the fork's own tooling**.
+- `USER_PATHS` is the never-touch safety invariant — a file under it that an update modifies
+  raises `SAFETY VIOLATION` and is reverted. That is exactly the guarantee fork files need.
+
+The list already holds locally-owned operational files of the same kind (`.claude/hooks/`,
+`opencode.json`, `plugins.local/`), so this is consistent use rather than a workaround.
+If any of these files are ever merged upstream, move them to `SYSTEM_PATHS` at that point.
+
+**Two traps found while doing this**, both worth knowing before editing that file:
+
+1. `extractArrayFromSource` parses the arrays with `matchAll(/['"]([^'"]+)['"]/g)` — a
+   naive quote-pairer. A single apostrophe in a comment inside the array body mis-parses
+   every entry below it, silently. Keep comments there free of apostrophes and quotes.
+2. `tests/` and `tests/outcome.test.mjs` are both `SYSTEM_PATHS` entries. Claiming `tests/`
+   or any child of it for the fork breaks the *SYSTEM_PATHS must not update user path*
+   invariant. Hence `regression/` at the repo root.
 
 ## Why the rules are not in `modes/oferta.md`
 

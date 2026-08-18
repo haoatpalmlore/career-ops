@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { execFileSync } from 'child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REG = join(HERE, 'tests/regression');
+const REG = join(HERE, 'regression');
 
 // Scripts owned by this fork. Upstream's own suite is test-all.mjs and is not
 // re-run here — this checks what the fork added, not what it inherited.
@@ -82,7 +82,7 @@ function runSelfTests() {
 
 async function runRegression() {
   const manifestPath = join(REG, 'MANIFEST.tsv');
-  if (!existsSync(manifestPath)) return [{ name: 'corpus', ok: false, detail: 'tests/regression/MANIFEST.tsv missing' }];
+  if (!existsSync(manifestPath)) return [{ name: 'corpus', ok: false, detail: 'regression/MANIFEST.tsv missing' }];
   const { verify } = await import('./verify-evaluation.mjs');
   return parseManifest(readFileSync(manifestPath, 'utf8')).map(row => {
     const p = join(REG, row.fixture);
@@ -104,19 +104,40 @@ function runInvariants() {
     out.push({ name: `${r.file} ${r.heading}`, ok: present, detail: present ? r.why : `MISSING — lost: ${r.why}` });
   }
   // Divergence surface: new files cannot conflict on rebase, edits to upstream
-  // files can. Tracked as a number so it cannot creep back up unnoticed.
-  let modified = [];
+  // files can. An allowlist rather than a count, so a NEW upstream file being
+  // touched fails even if the total stays flat, and each entry has to earn its
+  // place in writing.
+  const EXPECTED_MODIFIED = {
+    'upskill.mjs': 'integration seams for archetype weighting — the five named in LOCAL-CHANGES.md',
+    'update-system.mjs': 'USER_PATHS registration; fork files must be never-touch, not upstream-fetched',
+    '.gitignore': 'pre-existing local change, not part of this work',
+  };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
     const changed = execFileSync('git', ['diff', '--name-only', base], { cwd: HERE, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-    modified = changed.filter(f => {
+    const modified = changed.filter(f => {
       try { execFileSync('git', ['cat-file', '-e', `${base}:${f}`], { cwd: HERE, stdio: 'ignore' }); return true; }
       catch { return false; }
     });
-    out.push({ name: 'rebase conflict surface', ok: modified.length <= 2,
-               detail: modified.length ? `${modified.length} upstream file(s) modified: ${modified.join(', ')}` : 'no upstream files modified' });
+    const unexpected = modified.filter(f => !(f in EXPECTED_MODIFIED));
+    out.push({ name: 'rebase conflict surface', ok: unexpected.length === 0,
+               detail: unexpected.length
+                 ? `unexpected upstream file(s) modified: ${unexpected.join(', ')} — justify in LOCAL-CHANGES.md and add to EXPECTED_MODIFIED`
+                 : `${modified.length} upstream file(s), all expected: ${modified.join(', ')}` });
   } catch {
     out.push({ name: 'rebase conflict surface', ok: true, detail: 'no upstream remote — not evaluated' });
+  }
+
+  // Upstream owns a coverage guard asserting every tracked file is claimed by
+  // SYSTEM_PATHS or USER_PATHS. This harness originally skipped upstream's
+  // suite entirely, so five unregistered fork files reached code review. Run
+  // the one upstream check that this fork can actually break.
+  try {
+    execFileSync('node', [join(HERE, 'validate-system-paths-coverage.mjs')], { cwd: HERE, stdio: 'pipe' });
+    out.push({ name: 'SYSTEM_PATHS/USER_PATHS coverage', ok: true, detail: 'every tracked file is claimed' });
+  } catch (e) {
+    out.push({ name: 'SYSTEM_PATHS/USER_PATHS coverage', ok: false,
+               detail: String(e.stdout || e.stderr || e.message).trim().split('\n').slice(0, 3).join(' / ') });
   }
   return out;
 }
