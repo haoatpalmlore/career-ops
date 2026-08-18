@@ -56,13 +56,14 @@
  *      node apply-log.mjs --self-test
  */
 
-import { readFileSync, existsSync, appendFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, appendFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const LOG_PATH = join(CAREER_OPS, 'data/application-log.tsv');
 const TRACKER_PATH = join(CAREER_OPS, 'data/applications.md');
+const REPORTS_DIR = join(CAREER_OPS, 'reports');
 
 export const CHANNELS = ['inbound', 'referral', 'agency', 'portal', 'easyapply'];
 export const HOOKS = ['retail', 'level', 'domain', 'none'];
@@ -201,6 +202,76 @@ export function parseTracker(content) {
   return out;
 }
 
+// --- calibration: did the predictions hold? -----------------------------
+// A score with no testable claim attached is an opinion with a decimal point.
+// modes/_custom.md now requires every evaluation to carry a falsifier map.
+// This joins those predictions to the outcomes in application-log.tsv so the
+// evaluations accumulate a track record instead of disappearing.
+//
+// The join is by company name, which is imprecise when the same company is
+// evaluated twice. Ambiguous joins are reported as such rather than guessed:
+// a wrong join would silently corrupt the only accuracy signal that exists.
+
+export function extractFalsifier(md) {
+  const ms = String(md || '').match(/##\s*Machine Summary\s*\n+```ya?ml\n([\s\S]*?)```/i);
+  if (!ms) return null;
+  const block = ms[1].split(/^falsifier:\s*$/m)[1];
+  if (block === undefined) return null;
+  const out = {};
+  for (const line of block.split('\n')) {
+    if (/^\S/.test(line) && line.trim()) break;
+    const m = line.match(/^\s+([a-z_]+):\s*"?(.*?)"?\s*$/);
+    if (m) out[m[1]] = m[2];
+  }
+  const co = (ms[1].match(/^company:\s*"?(.*?)"?\s*$/m) || [])[1] || null;
+  const sc = parseFloat((ms[1].match(/^score:\s*([\d.]+)/m) || [])[1]);
+  return Object.keys(out).length ? { company: co, score: Number.isFinite(sc) ? sc : null, ...out } : null;
+}
+
+/**
+ * A prediction HELD if the application advanced, BROKE if it went silent or was
+ * rejected, and is PENDING otherwise. Deliberately crude: the point is a
+ * scoreboard that cannot be argued with, not a nuanced verdict.
+ */
+export function judgePrediction(outcome) {
+  if (ADVANCED.has(outcome)) return 'held';
+  if (outcome === 'silent' || outcome === 'rejected') return 'broke';
+  return 'pending';
+}
+
+const coKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+export function calibrate(reportFalsifiers, resolvedRows) {
+  // Prefer joining on the tracker number. Agency-mediated reports carry "?" as
+  // the company (#1596), so a name join would collapse every confidential
+  // employer into one bucket and report them all as ambiguous.
+  const byTracker = new Map();
+  const byCo = new Map();
+  for (const r of resolvedRows) {
+    if (r.tracker && r.tracker !== '-') {
+      if (!byTracker.has(String(r.tracker))) byTracker.set(String(r.tracker), []);
+      byTracker.get(String(r.tracker)).push(r);
+    }
+    const k = coKey(r.company);
+    if (!k) continue;
+    if (!byCo.has(k)) byCo.set(k, []);
+    byCo.get(k).push(r);
+  }
+  const judged = [];
+  for (const f of reportFalsifiers) {
+    const repNum = (String(f.report || '').match(/^(\d+)/) || [])[1];
+    const k = coKey(f.company);
+    const hits = (repNum && byTracker.get(repNum)) || byCo.get(k) || [];
+    if (hits.length === 0) { judged.push({ ...f, join: 'no-application', verdict: 'unapplied' }); continue; }
+    if (hits.length > 1) { judged.push({ ...f, join: 'ambiguous', verdict: 'unjoinable', candidates: hits.length }); continue; }
+    judged.push({ ...f, join: 'ok', outcome: hits[0].resolved, verdict: judgePrediction(hits[0].resolved) });
+  }
+  const held = judged.filter(j => j.verdict === 'held').length;
+  const broke = judged.filter(j => j.verdict === 'broke').length;
+  return { judged, held, broke, decided: held + broke,
+           accuracy: (held + broke) ? held / (held + broke) : null };
+}
+
 // --- writing -------------------------------------------------------------
 
 function ensureLog() {
@@ -311,6 +382,41 @@ function cmdBackfill(a) {
   console.log(JSON.stringify({ ok: true, added: fresh.length }, null, 2));
 }
 
+function cmdCalibration(a) {
+  if (!existsSync(REPORTS_DIR)) { console.error('no reports/ directory'); process.exit(1); }
+  const falsifiers = [];
+  for (const f of readdirSync(REPORTS_DIR).filter(x => x.endsWith('.md')).sort()) {
+    const fx = extractFalsifier(readFileSync(join(REPORTS_DIR, f), 'utf8'));
+    if (fx) falsifiers.push({ report: f, ...fx });
+  }
+  const { rows } = parseLog(readLog());
+  const today = (a.today && a.today !== true) ? a.today : new Date().toISOString().slice(0, 10);
+  const days = a['silence-after'] && a['silence-after'] !== true ? Number(a['silence-after']) : 30;
+  const { resolved } = funnel(rows, today, days);
+  const c = calibrate(falsifiers, resolved);
+
+  if (!a.summary) { console.log(JSON.stringify({ reportsWithFalsifier: falsifiers.length, ...c }, null, 2)); return; }
+  console.log('=== prediction track record ===');
+  console.log(`  reports carrying a falsifier   ${falsifiers.length}`);
+  if (falsifiers.length === 0) {
+    console.log('\n  No evaluation has ever made a testable prediction.');
+    console.log('  Nothing can be scored until new evaluations carry a falsifier: map.');
+    console.log('  See modes/_custom.md -> Falsification.');
+    return;
+  }
+  console.log(`  predictions resolved           ${c.decided}  (held ${c.held}, broke ${c.broke})`);
+  console.log(`  accuracy                       ${c.accuracy === null ? 'n/a - nothing resolved yet' : (100 * c.accuracy).toFixed(1) + '%'}`);
+  const un = c.judged.filter(j => j.verdict === 'unjoinable').length;
+  const na = c.judged.filter(j => j.verdict === 'unapplied').length;
+  if (un) console.log(`  ! ambiguous joins              ${un}  (company evaluated more than once - not guessed)`);
+  if (na) console.log(`  not yet applied to             ${na}`);
+  console.log('');
+  for (const j of c.judged) {
+    const tag = { held: 'HELD  ', broke: 'BROKE ', pending: 'wait  ', unapplied: '-     ', unjoinable: '?     ' }[j.verdict];
+    console.log(`  ${tag} ${String(j.score ?? '-').padEnd(4)} ${String(j.company || '?').slice(0, 22).padEnd(23)} ${String(j.predicts || '').slice(0, 60)}`);
+  }
+}
+
 function report(a) {
   const { rows, malformed } = parseLog(readLog());
   const today = (a.today && a.today !== true) ? a.today : new Date().toISOString().slice(0, 10);
@@ -380,17 +486,41 @@ function selfTest() {
   ok('parseTracker via -> agency', tr[0].channel === 'agency' && tr[1].channel === 'portal');
   ok('parseTracker maps status', tr[0].outcome === 'rejected' && tr[1].outcome === 'pending');
   ok('toLine blanks -> dash', toLine({ date: '2026-01-01', company: 'A' }).split('\t')[2] === '-');
+  ok('judgePrediction held', judgePrediction('interview') === 'held' && judgePrediction('offer') === 'held');
+  ok('judgePrediction broke', judgePrediction('silent') === 'broke' && judgePrediction('rejected') === 'broke');
+  ok('judgePrediction pending', judgePrediction('pending') === 'pending');
+  const fx = extractFalsifier('## Machine Summary\n\n```yaml\ncompany: "Acme"\nscore: 3.6\nfalsifier:\n  predicts: "reply in 21 days"\n  wrong_if: "silence"\nvia: null\n```\n');
+  ok('extractFalsifier reads map', fx && fx.predicts === 'reply in 21 days' && fx.company === 'Acme' && fx.score === 3.6);
+  ok('extractFalsifier stops at dedent', fx && fx.via === undefined);
+  ok('extractFalsifier null without map', extractFalsifier('## Machine Summary\n\n```yaml\nscore: 4\n```') === null);
+  const cal = calibrate(
+    [{ company: 'Acme', predicts: 'x' }, { company: 'Beta', predicts: 'y' }, { company: 'Zeta', predicts: 'z' }],
+    [{ company: 'Acme', resolved: 'interview' }, { company: 'Beta', resolved: 'silent' },
+     { company: 'Beta', resolved: 'rejected' }]);
+  ok('calibrate counts held/broke', cal.held === 1 && cal.broke === 0);
+  ok('calibrate refuses ambiguous join', cal.judged.some(j => j.verdict === 'unjoinable'));
+  ok('calibrate marks unapplied', cal.judged.some(j => j.verdict === 'unapplied'));
+  {
+    // Confidential employers all carry "?" as company; a name join would fuse
+    // them. The tracker number must win when present.
+    const c2 = calibrate(
+      [{ report: '185-x.md', company: '?', predicts: 'p' }, { report: '190-y.md', company: '?', predicts: 'p' }],
+      [{ company: '?', tracker: '185', resolved: 'interview' }, { company: '?', tracker: '190', resolved: 'silent' }]);
+    ok('calibrate joins confidential rows by tracker#', c2.held === 1 && c2.broke === 1);
+  }
+
   const fail = t.filter(x => !x.pass);
   for (const x of t) console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.n}`);
   console.log(`\n${t.length - fail.length}/${t.length} passed`);
   process.exit(fail.length ? 1 : 0);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const a = args(process.argv.slice(2));
   if (a['self-test']) selfTest();
   else if (a._[0] === 'add') cmdAdd(a);
   else if (a._[0] === 'outcome') cmdOutcome(a);
   else if (a._[0] === 'backfill') cmdBackfill(a);
+  else if (a.calibration) cmdCalibration(a);
   else report(a);
 }
