@@ -92,6 +92,11 @@ export const SCHEMA_VERSION = 1;
 // gaps matter most. Matches the apply threshold in Ethical Use (CLAUDE.md).
 const LOW_FIT_SCORE = 4.0;
 
+// Local fork extensions live in their own file so upstream rebases never
+// collide with them — see LOCAL-CHANGES.md.
+import { archetypeRelevance, parseTargetArchetypes, normalizeRequirement, rollupRequirements } from './upskill-ext.mjs';
+export { archetypeRelevance, parseTargetArchetypes, normalizeRequirement, rollupRequirements };
+
 // Skill vocabulary + canonical extractor moved to skill-extract.mjs (#1896) so
 // upskill, jd-skill-gap, and analyze-patterns share ONE source of truth. Re-
 // exported here so existing importers of extractSkills keep working unchanged.
@@ -309,106 +314,6 @@ export function parseReportGaps(content) {
   }
 
   return { score, gapText: gapDescriptions.join('\n'), hasMachineSummary, archetype };
-}
-
-/**
- * How much should a report's gaps count toward the roadmap?
- *
- * The original weight was `5.0 - score`, which gives the LOUDEST voice to the
- * roles scored WORST. Those are mostly roles rejected for being the wrong
- * archetype entirely, so the roadmap ended up optimising for jobs the
- * candidate would never take — React ranked #1 off five low-scoring
- * full-stack evaluations. Relevance gates that: a gap only earns roadmap
- * weight in proportion to how close its role sits to the target archetypes.
- *
- * primary -> 1.0, strong/secondary -> 0.6, everything else -> 0.15 (not zero:
- * a skill demanded across many off-target roles is still weak evidence).
- */
-export function archetypeRelevance(reportArchetype, targets) {
-  if (!reportArchetype) return 0.15;
-  const hay = String(reportArchetype).toLowerCase();
-  let best = 0.15;
-  for (const t of targets) {
-    const name = String(t.name || '').toLowerCase();
-    if (!name) continue;
-    const tokens = name.split(/[^a-z]+/).filter(w => w.length > 3);
-    const hit = hay.includes(name) || (tokens.length > 0 && tokens.every(w => hay.includes(w)));
-    if (!hit) continue;
-    const fit = String(t.fit || '').toLowerCase();
-    const w = fit === 'primary' ? 1.0 : (fit === 'secondary' || fit === 'strong') ? 0.6 : 0.3;
-    if (w > best) best = w;
-  }
-  return best;
-}
-
-/** Read archetype names + fit levels from config/profile.yml (shallow YAML). */
-export function parseTargetArchetypes(yamlText) {
-  const out = [];
-  const block = String(yamlText || '').split(/^\s*archetypes:\s*$/m)[1];
-  if (!block) return out;
-  let cur = null;
-  for (const line of block.split('\n')) {
-    if (/^\s{0,2}\S/.test(line) && !/^\s*-\s/.test(line) && cur) break;
-    const nm = line.match(/^\s*-\s*name:\s*"?([^"#]+?)"?\s*(?:#.*)?$/);
-    if (nm) { cur = { name: nm[1].trim(), fit: '' }; out.push(cur); continue; }
-    const ft = line.match(/^\s*fit:\s*"?([a-z]+)"?/i);
-    if (ft && cur) cur.fit = ft[1].toLowerCase();
-  }
-  return out;
-}
-
-/**
- * Collapse a free-text requirement to a comparison key.
- *
- * data/role-requirements.tsv held 147 GAP rows whose top entry appeared 3
- * times, because "executive engagement at cto vp level" and "executive
- * engagement at cto   vp level" were stored as different strings. Without a
- * key the file cannot roll up, and a gap ledger that cannot roll up cannot
- * produce a roadmap. Lowercase, strip punctuation and filler, collapse
- * whitespace, drop a few known synonyms to one form.
- */
-const REQ_SYNONYMS = [
-  [/\bpre[- ]?sales\b/g, 'presales'],
-  [/\bcustomer[- ]facing\b/g, 'customerfacing'],
-  [/\bsolutions? (?:architect|engineer)\b/g, 'sa'],
-  [/\b(?:cto|vp|c[- ]?level|executive)\b/g, 'exec'],
-  [/\btitle shape(?: on cv)?\b/g, 'titleshape'],
-  [/\bat scale\b/g, ''],
-];
-const REQ_STOP = new Set(['a','an','the','and','or','of','in','on','at','to','for','with','experience','level','strong','proven','deep']);
-
-export function normalizeRequirement(raw) {
-  let s = String(raw || '').toLowerCase();
-  s = s.replace(/[^a-z0-9 ]+/g, ' ');
-  for (const [re, to] of REQ_SYNONYMS) s = s.replace(re, to);
-  const words = s.split(/\s+/).filter(w => w && !REQ_STOP.has(w));
-  return [...new Set(words)].sort().join(' ').trim();
-}
-
-/** Roll up role-requirements.tsv GAP/PARTIAL rows into a ranked cluster list. */
-export function rollupRequirements(tsvText) {
-  const byKey = new Map();
-  for (const line of String(tsvText || '').split('\n')) {
-    const t = line.replace(/\r$/, '');
-    if (!t.trim() || t.startsWith('#')) continue;
-    const c = t.split('\t').map(x => x.trim());
-    if (c.length < 6) continue;
-    const [rep, company, role, bucket, requirement, status] = c;
-    const st = status.toUpperCase();
-    if (st !== 'GAP' && st !== 'PARTIAL') continue;
-    const key = normalizeRequirement(requirement);
-    if (!key) continue;
-    if (!byKey.has(key)) byKey.set(key, { key, bucket, variants: new Set(), reports: new Set(), gap: 0, partial: 0 });
-    const e = byKey.get(key);
-    e.variants.add(requirement);
-    if (rep) e.reports.add(rep);
-    if (st === 'GAP') e.gap += 1; else e.partial += 1;
-  }
-  return [...byKey.values()]
-    .map(e => ({ key: e.key, bucket: e.bucket, label: [...e.variants][0],
-                 variants: e.variants.size, roles: e.reports.size,
-                 gap: e.gap, partial: e.partial, total: e.gap + e.partial }))
-    .sort((a, b) => b.total - a.total || b.gap - a.gap);
 }
 
 /**
@@ -892,54 +797,22 @@ soft_gaps:
     }
   }
 
-  // --- archetype relevance + requirement rollup (fork) ---
+  // --- archetype weighting (fork extension; pure fns tested in upskill-ext.mjs) ---
   {
-    const targets = parseTargetArchetypes([
-      'target_roles:', '  archetypes:',
-      '    - name: "AI Solutions Architect"', '      level: "Staff"', '      fit: "primary"',
-      '    - name: "AI Platform / LLMOps Engineer"', '      fit: "secondary"',
-    ].join('\n'));
-    if (targets.length !== 2) failures.push(`parseTargetArchetypes expected 2, got ${targets.length}`);
-    if (targets[0] && targets[0].fit !== 'primary') failures.push('parseTargetArchetypes lost fit level');
-    if (archetypeRelevance('AI Solutions Architect', targets) !== 1.0) failures.push('primary archetype should weigh 1.0');
-    if (archetypeRelevance('AI Platform / LLMOps Engineer', targets) !== 0.6) failures.push('secondary archetype should weigh 0.6');
-    if (archetypeRelevance('Frontend Engineer', targets) !== 0.15) failures.push('off-target archetype should weigh 0.15');
-    if (archetypeRelevance(null, targets) !== 0.15) failures.push('missing archetype should weigh 0.15');
-
-    // an off-target low-scoring role must not outrank an on-target one
+    const targets = parseTargetArchetypes('target_roles:\n  archetypes:\n    - name: "AI Solutions Architect"\n      fit: "primary"\n');
     const reps = [
       { num: 1, score: 2.0, gapText: 'React', archetype: 'Frontend Engineer' },
       { num: 2, score: 2.0, gapText: 'React', archetype: 'Frontend Engineer' },
       { num: 3, score: 4.0, gapText: 'Kubernetes', archetype: 'AI Solutions Architect' },
     ];
-    const rel = r => archetypeRelevance(r.archetype, targets);
-    const { gaps: gw } = aggregateGaps(reps, new Set(), rel);
+    const { gaps: gw } = aggregateGaps(reps, new Set(), r => archetypeRelevance(r.archetype, targets));
     if (!gw.length || gw[0].skill !== 'Kubernetes') {
       failures.push(`archetype weighting: on-target gap should rank first, got ${gw.map(g => g.skill).join(',')}`);
     }
     const { gaps: gu } = aggregateGaps(reps, new Set());
     if (!gu.length || gu[0].skill !== 'React') {
-      failures.push('unweighted aggregation should still rank React first (regression guard)');
+      failures.push('unweighted aggregation should still rank React first (upstream-behaviour regression guard)');
     }
-
-    if (normalizeRequirement('Executive engagement at CTO / VP level') !==
-        normalizeRequirement('executive engagement at cto   vp level')) {
-      failures.push('normalizeRequirement should collapse punctuation/whitespace variants');
-    }
-    if (normalizeRequirement('Enterprise pre-sales / customer facing at scale') !==
-        normalizeRequirement('enterprise presales customerfacing')) {
-      failures.push('normalizeRequirement should collapse pre-sales/customer-facing synonyms');
-    }
-    const roll = rollupRequirements([
-      '10\tAcme\tSA\tSOFT\tEnterprise pre-sales / customer facing\tGAP\tBuilding\t-',
-      '11\tBeta\tSA\tSOFT\tenterprise presales customerfacing\tGAP\tBuilding\t-',
-      '12\tGam\tSA\tTECHNICAL\tKubernetes\tHAVE\tReady\t-',
-    ].join('\n'));
-    if (roll.length !== 1) failures.push(`rollupRequirements should cluster to 1, got ${roll.length}`);
-    if (roll[0] && (roll[0].total !== 2 || roll[0].roles !== 2 || roll[0].variants !== 2)) {
-      failures.push('rollupRequirements cluster counts wrong');
-    }
-    if (roll.some(c => c.key.includes('kubernetes'))) failures.push('rollupRequirements must skip HAVE rows');
   }
 
   if (failures.length > 0) {
@@ -1038,31 +911,12 @@ if (isMain) {
   validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS });
   if (args.includes('--self-test')) runSelfTest();
 
-  // --- Requirement rollup mode (fork) ------------------------------------
-  // data/role-requirements.tsv is written one row per JD requirement, so the
-  // same underlying gap appears under many near-identical strings and the file
-  // cannot rank itself. This collapses them to a comparison key and ranks the
-  // clusters -- the thing the ledger was built to produce.
+  // --- Requirement rollup (fork seam; implementation in upskill-ext.mjs) ---
+  // Kept to a one-line delegation on purpose: new files never conflict on a
+  // rebase, edits to this upstream file do. See LOCAL-CHANGES.md.
   if (args.includes('--requirements')) {
-    const REQ_FILE = join(CAREER_OPS, 'data/role-requirements.tsv');
-    if (!existsSync(REQ_FILE)) {
-      console.error('No data/role-requirements.tsv found. Run critic-mode evaluations first.');
-      process.exit(1);
-    }
-    const clusters = rollupRequirements(readFileSync(REQ_FILE, 'utf-8'));
-    if (args.includes('--summary')) {
-      console.log('=== recurring gaps, clustered (data/role-requirements.tsv) ===');
-      console.log('total  gap  part  roles  bucket      requirement (representative wording)');
-      for (const c of clusters.slice(0, 20)) {
-        console.log(
-          String(c.total).padStart(5) + String(c.gap).padStart(5) + String(c.partial).padStart(6) +
-          String(c.roles).padStart(7) + '  ' + String(c.bucket || '-').padEnd(11) + ' ' +
-          c.label + (c.variants > 1 ? `  [${c.variants} wordings]` : ''));
-      }
-    } else {
-      console.log(JSON.stringify({ schema_version: SCHEMA_VERSION, clusters }, null, 2));
-    }
-    process.exit(0);
+    const { runRequirementsCli } = await import('./upskill-ext.mjs');
+    runRequirementsCli(args, aggregateGaps);
   }
 
   // ====== SECURE TARGETED MODE PHASE 2a IMPLEMENTATION ======
