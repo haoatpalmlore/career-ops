@@ -916,7 +916,7 @@ if (isMain) {
   // rebase, edits to this upstream file do. See LOCAL-CHANGES.md.
   if (args.includes('--requirements')) {
     const { runRequirementsCli } = await import('./upskill-ext.mjs');
-    runRequirementsCli(args, aggregateGaps);
+    runRequirementsCli(args, SCHEMA_VERSION);
   }
 
   // ====== SECURE TARGETED MODE PHASE 2a IMPLEMENTATION ======

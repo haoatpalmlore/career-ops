@@ -165,7 +165,9 @@ reports/185-confidential-wow-recruitment-2026-08-18.md   # slug is confidential-
 node reserve-report-num.mjs --release 185
 
 # tracker — TSV then merge, never a hand edit
-printf '185\t2026-08-18\t?\tSenior AI Engineer\tEvaluated\t3.3/5\t...\tvia=WOW Recruitment\n' \
+# 9 columns, then the tagged via= extra. merge-tracker.mjs maps by position:
+# num, date, company, role, status, score, pdf, report-link, notes [, via=...]
+printf '185\t2026-08-18\t?\tSenior AI Engineer\tEvaluated\t3.3/5\t\xe2\x9d\x8c\t[185](reports/185-confidential-wow-recruitment-2026-08-18.md)\tAgency listing, employer undisclosed\tvia=WOW Recruitment\n' \
   > batch/tracker-additions/185-confidential-wow-recruitment.tsv
 node merge-tracker.mjs
 
@@ -197,7 +199,9 @@ node apply-log.mjs add --company "?" --role "Senior AI Engineer" \
 
 `--gates 3` is the count from step 4 (AWS, Bedrock, LangGraph). `--hook none` because no
 retail or leadership credential offsets the AI-tenure filter here. When a reply arrives:
-`node apply-log.mjs outcome --company "?" --set rejected`. Silence needs no action — a row
+`node apply-log.mjs outcome --tracker 185 --set rejected`. Select by `--tracker`, never by
+company: every agency-mediated posting is company `?`, so a name selector is ambiguous by
+construction. The CLI refuses an ambiguous match rather than taking the newest row. Silence needs no action — a row
 pending past 30 days counts as silent automatically.
 
 Then `node apply-log.mjs --calibration` reports whether the step-7 prediction held.
