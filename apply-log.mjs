@@ -229,11 +229,33 @@ export function extractFalsifier(md) {
 }
 
 /**
- * A prediction HELD if the application advanced, BROKE if it went silent or was
- * rejected, and is PENDING otherwise. Deliberately crude: the point is a
- * scoreboard that cannot be argued with, not a nuanced verdict.
+ * A falsifier states its own resolution date ("no interview scheduled by
+ * 2026-09-02"). Pull it out so a prediction is not judged before it is due.
+ * Prefers wrong_if, which is where the deadline belongs, then predicts.
  */
-export function judgePrediction(outcome) {
+export function extractDeadline(f) {
+  for (const k of ['wrong_if', 'predicts']) {
+    const m = String(f?.[k] || '').match(/\b(\d{4}-\d{2}-\d{2})\b/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * HELD if the application advanced, BROKE if it went silent or was rejected,
+ * PENDING otherwise.
+ *
+ * The outcome is a PROXY for the prediction, not the prediction itself, so a
+ * dated falsifier must not be judged early. AIONIX #185 is the case that forced
+ * this: the row went `responded` the day after the CV was sent, which mapped to
+ * ADVANCED and reported the prediction HELD at 100% accuracy — while the thing
+ * actually predicted (a first-round technical conversation) had not happened and
+ * was not due until 2026-09-02. A flattering accuracy number is the exact
+ * failure this whole mechanism exists to prevent, so before the deadline the
+ * verdict stays pending regardless of intermediate progress.
+ */
+export function judgePrediction(outcome, deadline = null, today = null) {
+  if (deadline && today && today < deadline) return 'pending';
   if (ADVANCED.has(outcome)) return 'held';
   if (outcome === 'silent' || outcome === 'rejected') return 'broke';
   return 'pending';
@@ -241,7 +263,7 @@ export function judgePrediction(outcome) {
 
 const coKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export function calibrate(reportFalsifiers, resolvedRows) {
+export function calibrate(reportFalsifiers, resolvedRows, today = null) {
   // Prefer joining on the tracker number. Agency-mediated reports carry "?" as
   // the company (#1596), so a name join would collapse every confidential
   // employer into one bucket and report them all as ambiguous.
@@ -264,7 +286,11 @@ export function calibrate(reportFalsifiers, resolvedRows) {
     const hits = (repNum && byTracker.get(repNum)) || byCo.get(k) || [];
     if (hits.length === 0) { judged.push({ ...f, join: 'no-application', verdict: 'unapplied' }); continue; }
     if (hits.length > 1) { judged.push({ ...f, join: 'ambiguous', verdict: 'unjoinable', candidates: hits.length }); continue; }
-    judged.push({ ...f, join: 'ok', outcome: hits[0].resolved, verdict: judgePrediction(hits[0].resolved) });
+    const deadline = extractDeadline(f);
+    const verdict = judgePrediction(hits[0].resolved, deadline, today);
+    judged.push({ ...f, join: 'ok', outcome: hits[0].resolved, deadline,
+                  verdict,
+                  pendingUntil: (verdict === 'pending' && deadline) ? deadline : undefined });
   }
   const held = judged.filter(j => j.verdict === 'held').length;
   const broke = judged.filter(j => j.verdict === 'broke').length;
@@ -413,7 +439,7 @@ function cmdCalibration(a) {
   const today = (a.today && a.today !== true) ? a.today : new Date().toISOString().slice(0, 10);
   const days = a['silence-after'] && a['silence-after'] !== true ? Number(a['silence-after']) : 30;
   const { resolved } = funnel(rows, today, days);
-  const c = calibrate(falsifiers, resolved);
+  const c = calibrate(falsifiers, resolved, today);
 
   if (!a.summary) { console.log(JSON.stringify({ reportsWithFalsifier: falsifiers.length, ...c }, null, 2)); return; }
   console.log('=== prediction track record ===');
@@ -433,7 +459,8 @@ function cmdCalibration(a) {
   console.log('');
   for (const j of c.judged) {
     const tag = { held: 'HELD  ', broke: 'BROKE ', pending: 'wait  ', unapplied: '-     ', unjoinable: '?     ' }[j.verdict];
-    console.log(`  ${tag} ${String(j.score ?? '-').padEnd(4)} ${String(j.company || '?').slice(0, 22).padEnd(23)} ${String(j.predicts || '').slice(0, 60)}`);
+    const due = j.pendingUntil ? ` [not due until ${j.pendingUntil}]` : '';
+    console.log(`  ${tag} ${String(j.score ?? '-').padEnd(4)} ${String(j.company || '?').slice(0, 22).padEnd(23)} ${String(j.predicts || '').slice(0, 52)}${due}`);
   }
 }
 
@@ -507,6 +534,14 @@ function selfTest() {
   ok('parseTracker maps status', tr[0].outcome === 'rejected' && tr[1].outcome === 'pending');
   ok('toLine blanks -> dash', toLine({ date: '2026-01-01', company: 'A' }).split('\t')[2] === '-');
   ok('judgePrediction held', judgePrediction('interview') === 'held' && judgePrediction('offer') === 'held');
+  ok('extractDeadline prefers wrong_if', extractDeadline({ wrong_if: 'nothing by 2026-09-02', predicts: 'x by 2026-08-20' }) === '2026-09-02');
+  ok('extractDeadline falls back to predicts', extractDeadline({ predicts: 'a call by 2026-08-20' }) === '2026-08-20');
+  ok('extractDeadline null when undated', extractDeadline({ wrong_if: 'no reply at all' }) === null);
+  // AIONIX #185: responded the next day, but the predicted event was an
+  // interview not due until 2026-09-02. Judging early reported 100% accuracy.
+  ok('dated prediction not judged early', judgePrediction('responded', '2026-09-02', '2026-08-19') === 'pending');
+  ok('dated prediction judged after the deadline', judgePrediction('responded', '2026-09-02', '2026-09-03') === 'held');
+  ok('undated prediction still judged', judgePrediction('responded', null, '2026-08-19') === 'held');
   ok('judgePrediction broke', judgePrediction('silent') === 'broke' && judgePrediction('rejected') === 'broke');
   ok('judgePrediction pending', judgePrediction('pending') === 'pending');
   const fx = extractFalsifier('## Machine Summary\n\n```yaml\ncompany: "Acme"\nscore: 3.6\nfalsifier:\n  predicts: "reply in 21 days"\n  wrong_if: "silence"\nvia: null\n```\n');
