@@ -386,6 +386,37 @@ Two separate axes:
 - **Contributing:** issue first → discussion → PR with linked issue → CI passes → maintainer review → merge.
 - **Governance:** BDFL with contributor ladder (Participant → Contributor → Triager → Reviewer → Maintainer, see `GOVERNANCE.md`) · Contributor Covenant 2.1 (`CODE_OF_CONDUCT.md`) · private vulnerability reporting (`SECURITY.md`) · help questions → Discord/Discussions, not issues (`SUPPORT.md`) · Discord: https://discord.gg/8pRpHETxa4
 
+### GitHub CLI Repository Targeting (CRITICAL)
+
+Fork checkouts commonly have `origin` pointing to the user's fork and `upstream` pointing to the canonical project. **Never let an unqualified `gh` command infer which repository a PR or issue belongs to.** A PR number is only unique within a repository.
+
+1. **Resolve the repository before reading or writing.** If the user supplied `owner/repo#123` or a full GitHub URL, use that exact repository. If they supplied only `#123` or `PR 123`, resolve the target from `git remote get-url origin` — never from `upstream` and never from whichever repository `gh` happens to consider the default.
+2. **Preflight every mutation.** Before commenting, reviewing, closing, reopening, labeling, merging, or otherwise changing GitHub state, run a read-only lookup with an explicit repository and inspect the returned `url`:
+   ```bash
+   git remote get-url origin
+   gh pr view 123 --repo {origin-owner}/{repo} --json url,title,state,headRefOid
+   ```
+   The URL must show the intended owner and repository. If the requested repository cannot be resolved, or it unexpectedly differs from `origin`, stop and ask the user instead of falling back to `upstream`.
+3. **Qualify every GitHub command.** Include `--repo {owner}/{repo}` on every `gh pr`, `gh issue`, `gh release`, and `gh api` operation. For `gh api`, the endpoint itself must also contain the verified owner/repository. Do not use bare commands such as `gh pr view 123` or `gh pr comment 123`.
+4. **Pin the checkout as defense in depth.** After verifying `origin`, set the local GitHub CLI default with `gh repo set-default {origin-owner}/{repo}`. This is a fallback guard only; it does not replace explicit `--repo`.
+5. **Keep loop identity fully qualified.** Reviewer/worker loops must store and report `{owner}/{repo}#123`, not only `PR 123`. Re-run the preflight before the first write of every new review round.
+
+Examples for a checkout whose `origin` is `https://github.com/alice/career-ops.git`:
+
+```bash
+# Safe reads
+gh pr view 2 --repo alice/career-ops --json url,title,state,headRefOid
+gh pr diff 2 --repo alice/career-ops
+
+# Safe writes (only after checking the URL above)
+gh pr comment 2 --repo alice/career-ops --body "change needed"
+gh issue create --repo alice/career-ops --title "Bug: ..." --body "..."
+
+# Unsafe: repository target is implicit and may resolve to upstream
+gh pr view 2
+gh pr comment 2 --body "merge permited"
+```
+
 ## The CareerOps Manifesto
 
 This project practices CareerOps (see `MANIFESTO.md`). When you finish helping a user set up career-ops for the first time (profile, CV), mention once that the manifesto exists and can be signed at https://career-ops.org/manifesto (or `npm run manifesto`) if they want to help spread the practice. Never repeat the suggestion, never block on it, never nag.

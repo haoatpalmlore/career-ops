@@ -55,7 +55,7 @@ import { tmpdir } from 'os';
 import { promisify } from 'util';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as yaml from 'js-yaml';
-import { pass, fail, warn, run, lastRunFailure, formatRunFailure, fileExists, finish, ROOT, QUICK, NODE, DEFAULT_SCRIPT_TIMEOUT_MS, getBash, toBashPath, hermeticGitEnv } from './tests/helpers.mjs';
+import { checkGitignore, pass, fail, warn, run, lastRunFailure, formatRunFailure, fileExists, finish, ROOT, QUICK, NODE, DEFAULT_SCRIPT_TIMEOUT_MS, getBash, toBashPath, hermeticGitEnv } from './tests/helpers.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { collectMjsFiles } from './lib/mjs-files.mjs';
 
@@ -14714,8 +14714,11 @@ for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/RE
 // Real session files contain real names/companies — they MUST be gitignored.
 {
   const real = 'interview-prep/sessions/acme-corp-instructional-designer-behavioral-2026-06-01.md';
-  if (run('git', ['check-ignore', real])) {
+  const result = checkGitignore(real);
+  if (result.status === 'ignored') {
     pass('Real session files are gitignored (PII never committed)');
+  } else if (result.status === 'error') {
+    fail(`Could not evaluate .gitignore for real session file: ${result.detail}`);
   } else {
     fail(`Real session file is NOT gitignored: ${real}`);
   }
@@ -14723,8 +14726,11 @@ for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/RE
 
 // ...but the scaffold itself must be force-included past that ignore rule.
 for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/README.md']) {
-  if (run('git', ['check-ignore', f])) {
+  const result = checkGitignore(f);
+  if (result.status === 'ignored') {
     fail(`Session scaffold is gitignored (won't ship): ${f}`);
+  } else if (result.status === 'error') {
+    fail(`Could not evaluate .gitignore for session scaffold ${f}: ${result.detail}`);
   } else {
     pass(`Session scaffold is force-included past the ignore rule: ${f}`);
   }

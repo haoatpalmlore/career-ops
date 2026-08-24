@@ -139,6 +139,11 @@ function runInvariants() {
   const EXPECTED_MODIFIED = {
     'upskill.mjs': 'integration seams for archetype weighting — the five named in LOCAL-CHANGES.md',
     'update-system.mjs': 'USER_PATHS registration; fork files must be never-touch, not upstream-fetched',
+    'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',
+    'test-all.mjs': 'regression guard for the GitHub CLI targeting contract, justified in LOCAL-CHANGES.md',
+    'tests/helpers.mjs': 'symlink-safe isolated .gitignore evaluator, justified in LOCAL-CHANGES.md',
+    'tests/user-layer-gitignored.test.mjs': 'user-layer ignore probes use the isolated evaluator, justified in LOCAL-CHANGES.md',
+    'tests/generate-pdf-page-budget.test.mjs': 'PDF test sandbox stays out of the symlinkable output user layer, justified in LOCAL-CHANGES.md',
   };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
