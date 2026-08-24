@@ -91,3 +91,21 @@ jobs:
         run: node upgrade-tests.mjs --canary
       - name: Local-paths declaration survives a real apply (#2421)
         run: node upgrade-tests.mjs --local-paths
+
+  fork-invariants:
+    name: Fork invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git remote add upstream https://github.com/santifer/career-ops.git
+      - run: git fetch upstream main '+refs/tags/career-ops-v*:refs/tags/career-ops-v*'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts
+      - run: node fork-sync.mjs setup
+      - run: node system-check.mjs
+      - run: node fork/fork-sync.test.mjs
