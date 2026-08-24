@@ -22,6 +22,11 @@ Run `node system-check.mjs` to assert all of this still holds.
 | `modes/_custom.md` | symlink | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives in the data layer, outside the repo — an update cannot reach it. |
 | `data/application-log.tsv` | symlink | none | User layer. |
 | `update-system.mjs` | **modified** | low | Six `USER_PATHS` entries registered. See below. |
+| `AGENTS.md` | **modified** | low | Fork-safe GitHub CLI targeting: resolve shorthand PR/issue references from `origin`, preflight mutations, and explicitly qualify every repository target. |
+| `test-all.mjs` | **modified** | low | Regression guard that keeps the GitHub CLI targeting contract present in `AGENTS.md`. |
+| `tests/helpers.mjs` | **modified** | low | Symlink-safe `.gitignore` rule evaluator backed by an isolated temporary Git repository. |
+| `tests/user-layer-gitignored.test.mjs` | **modified** | low | Uses the isolated evaluator so external user-layer symlinks do not turn valid ignore rules into Git pathspec errors. |
+| `tests/generate-pdf-page-budget.test.mjs` | **modified** | low | Keeps PDF fixtures in the repo-root `.tmp-script-test-*` scratch namespace instead of the symlinkable `output/` user layer. |
 
 ## Why the fork files are in `USER_PATHS`, not `SYSTEM_PATHS`
 
@@ -74,10 +79,15 @@ Step 3 reports checks that broke, checks that disappeared, and metric drift sepa
 A broken or removed check fails the run; metric drift never does — the funnel moving is
 information, not a regression.
 
-Expect conflicts only in `upskill.mjs`, and only in these places:
+The only behavioural integration conflict should be in `upskill.mjs`, in these places:
 `parseReportGaps` return value · `aggregateGaps` signature · the `analyze()` call site ·
 the `--requirements` CLI delegation · the self-test block. Take upstream's version of the
 surrounding code and reapply those five seams.
+
+`AGENTS.md`, `test-all.mjs`, and `update-system.mjs` are also intentional upstream-file
+edits. They are narrow guard/registration seams, but an upstream edit to the same regions
+can still conflict; preserve the inventory rows above and rerun both `node test-all.mjs`
+and `node system-check.mjs` after rebasing.
 
 ## What is deliberately not enforced
 
