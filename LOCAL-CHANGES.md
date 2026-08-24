@@ -103,3 +103,32 @@ and `node system-check.mjs` after rebasing.
   and addresses scale. It cannot check whether the argument is honest.
 - **Whether the archetype weighting is *correct*.** Only calibration data settles that, and
   there is not enough yet — `--validate` currently returns INSUFFICIENT DATA by design.
+
+## Open CI handover: inherited CodeQL finding
+
+PR #2 synchronizes a fork whose `main` branch was roughly 200 upstream commits
+behind. GitHub reports that it cannot retrieve the full PR diff because more than
+300 files changed. As a result, Advanced Security attributes an existing upstream
+finding in `tests/helpers.mjs::run()` to this PR even though the finding is in the
+upstream test harness rather than production code.
+
+The helper resolves the executable through `resolveAllowedExecutable()`, passes an
+argument vector to `execFileSync`, and never enables a shell. CodeQL nevertheless
+reports `js/command-line-injection` (critical) plus the related environment-derived
+command warning. Commit `f7ebde3` added a narrowly documented
+`lgtm[js/command-line-injection]` suppression, but GitHub did not honor it; do not
+repeat that approach unchanged.
+
+The remaining resolution should be explicit and reviewable. Preferred options are:
+
+1. Refactor `run()` so each allowed executable reaches a literal `execFileSync`
+   call through a switch, then verify the aggregate Advanced Security check.
+2. If repository policy permits, dismiss this exact alert as test-only/accepted
+   after reviewing the allowlist and argv-only call.
+3. Establish the upstream synchronization as the fork base through an authorized
+   merge path, then re-evaluate PR #2 against the smaller, accurately attributable
+   fork diff.
+
+Do not merge PR #2 while the required aggregate `CodeQL` check is red. The CodeQL
+language analysis jobs themselves pass; the blocker is the subsequent Advanced
+Security policy check over the uploaded results.
