@@ -147,6 +147,7 @@ function runInvariants() {
     '.github/workflows/signature-ci.yml': 'signature-only validator skips ordinary fork integration PRs',
     'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',
     'test-all.mjs': 'symlink-safe gitignore assertions for the external-data overlay',
+    'tests/helpers.mjs': 'documented CodeQL suppression for the executable-allowlisted argv-only test runner',
     'generate-pdf.mjs': 'manifest paths accept both code and managed data-overlay namespaces',
     'verify-pipeline.mjs': 'tracker overrides isolate sibling user-layer files in fixtures',
   };
