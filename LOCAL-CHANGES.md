@@ -22,6 +22,11 @@ Run `node system-check.mjs` to assert all of this still holds.
 | `modes/_custom.md` | symlink | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives in the data layer, outside the repo — an update cannot reach it. |
 | `data/application-log.tsv` | symlink | none | User layer. |
 | `update-system.mjs` | **modified** | low | Six `USER_PATHS` entries registered. See below. |
+| `fork/owned-paths.txt` | **new** | none | Versioned ownership manifest; `fork-sync doctor` generates ignored `config/local-paths.txt`. |
+| `fork-sync.mjs` | **new** | none | Transactional external-data overlay manager (`doctor`, `start`, `continue`, `abort`). |
+| `.github/workflows/upstream-sync.yml` | **new** | low | Weekly reviewed, never-auto-merged upstream sync proposal. |
+| `.github/workflows/test.yml` | **modified** | low | Fetches canonical tags and runs fork invariants. |
+| `.github/workflows/signature-ci.yml` | **modified** | low | Makes the signature-only validator a no-op for ordinary integration PRs. |
 | `AGENTS.md` | **modified** | low | Fork-safe GitHub CLI targeting: resolve shorthand PR/issue references from `origin`, preflight mutations, and explicitly qualify every repository target. |
 | `test-all.mjs` | **modified** | low | Regression guard that keeps the GitHub CLI targeting contract present in `AGENTS.md`. |
 | `tests/helpers.mjs` | **modified** | low | Symlink-safe `.gitignore` rule evaluator backed by an isolated temporary Git repository. |
