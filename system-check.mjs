@@ -146,10 +146,9 @@ function runInvariants() {
     '.github/workflows/test.yml': 'canonical tag bootstrap and fork-specific CI gate',
     '.github/workflows/signature-ci.yml': 'signature-only validator skips ordinary fork integration PRs',
     'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',
-    'test-all.mjs': 'regression guard for the GitHub CLI targeting contract, justified in LOCAL-CHANGES.md',
-    'tests/helpers.mjs': 'symlink-safe isolated .gitignore evaluator, justified in LOCAL-CHANGES.md',
-    'tests/user-layer-gitignored.test.mjs': 'user-layer ignore probes use the isolated evaluator, justified in LOCAL-CHANGES.md',
-    'tests/generate-pdf-page-budget.test.mjs': 'PDF test sandbox stays out of the symlinkable output user layer, justified in LOCAL-CHANGES.md',
+    'test-all.mjs': 'symlink-safe gitignore assertions for the external-data overlay',
+    'generate-pdf.mjs': 'manifest paths accept both code and managed data-overlay namespaces',
+    'verify-pipeline.mjs': 'tracker overrides isolate sibling user-layer files in fixtures',
   };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
