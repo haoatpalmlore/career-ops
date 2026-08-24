@@ -199,6 +199,9 @@ export function run(cmd, args = [], opts = {}) {
   lastFailure = null;
   const exe = resolveAllowedExecutable(cmd);
   try {
+    // Test harness only: exe is restricted by resolveAllowedExecutable above,
+    // args are passed as an argv vector, and shell execution is disabled.
+    // lgtm[js/command-line-injection]
     return execFileSync(exe, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...opts }).trim();
   } catch (e) {
     // execFileSync attaches the child's streams and exit status to the error.
