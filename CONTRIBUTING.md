@@ -13,7 +13,7 @@ career-ops is a great place to make your **first open-source contribution** — 
 - **Your human work gets a real review.** We read every PR. We don't drown contributors in bot noise, and we don't merge AI-slop — put thought in, get thought back.
 - **A path forward.** Consistent, high-quality contributors get credited publicly and invited into bigger roles (reviewer, then maintainer).
 
-New to all this? That's the point. Claim an issue with a comment, ask anything in [Discord](https://discord.gg/8pRpHETxa4), and we'll help you land it.
+New to all this? That's the point. Claim a good-first-issue by commenting `/assign` on it, ask anything in [Discord](https://discord.gg/8pRpHETxa4), and we'll help you land it.
 
 ## Before Submitting a PR
 
@@ -56,6 +56,14 @@ The review process you'll experience here is documented end-to-end in [Agentic m
 - New skill modes (in `modes/`)
 - Script improvements (`.mjs` utilities)
 
+### Claiming a good first issue
+
+Comment `/assign` on any [`good first issue`](https://github.com/santifer/career-ops/contribute) and it's yours: no waiting for a maintainer. How it stays fair:
+
+- **Claims free up on their own.** After 7 quiet days (with a friendly ping at day 3) the issue goes back to the window, so nothing stays stuck. `/extend` restarts the clock, no questions asked; `/unassign` lets go cleanly. An open PR always pauses the clock.
+- **Reserved for newcomers.** Good-first-issues are for contributors with fewer than 3 merged PRs here (`first-timers-only` means exactly that: your very first), one at a time, so a first-time contributor always has a way in. Past that stage? [`help wanted`](https://github.com/santifer/career-ops/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) is your board.
+- **No claim needed to contribute.** A PR straight onto any unassigned issue is always welcome.
+
 ## The contribution ladder
 
 There's a clear path here — we promote people who show up:
@@ -66,6 +74,30 @@ There's a clear path here — we promote people who show up:
 4. **Maintainer** — you help steer the project.
 
 We credit contributors publicly and invite high-signal folks up the ladder. Want to help more? Just say so in an issue.
+
+## Adopting an abandoned PR
+
+Life happens: a PR gets a review, the author moves on, and useful work strands at 80% done. We don't let a bot bury it, and we don't let it rot. Instead it goes through a public, predictable ladder:
+
+1. **Two weeks of silence** after a review round, and a maintainer opts the PR into the ladder (`adoption/track`). You get a friendly ping: still yours, no rush.
+2. **Two more weeks**, a second check-in with the plan spelled out: two further weeks of silence and the work opens up for adoption.
+3. **Only then** a maintainer (never a bot) closes the PR with thanks and opens a companion issue labeled **`adoptable`**, pointing at the branch and listing exactly what's left to do.
+
+**Adopting one** is one of the highest-value first contributions you can make: the diff is mostly done, the review is already written, and the remaining work is scoped. Open a *new* PR that carries the original commits (git preserves the author's credit), or add a `Co-authored-by:` trailer for them. Both of you end up credited: the original author for the work, you for landing it.
+
+**If you're the original author coming back**: the work stays yours to reclaim at any point before someone else finishes it. Just say so on the issue. Any comment or push from you at any ladder step resets the clock completely.
+
+## Someone else's open PR stays theirs
+
+The ladder above is for work that has been **abandoned**. An open PR with an author still around is a different thing, and the line matters.
+
+**Please don't open a PR that re-resolves someone else's conflict.** Pointing out on the thread that a PR has gone into conflict is genuinely useful. Rebasing it onto a branch of your own and opening a replacement is not, however cleanly the merge is done: landing that replacement closes the original, and the author is left with a `closed` PR where their `merged` should have been. That badge is most of what a contributor takes away from a project, and it isn't ours to reassign.
+
+If the conflict came from something **we** merged, the fix is ours. We resolve it on the author's own branch (that is what "Allow edits by maintainers" is for), run the suite, and leave their PR and their authorship untouched. If it came from anywhere else, the author rebases whenever they're ready: nobody is on a clock for that.
+
+This applies to automation as well. A bot opening replacement PRs on other people's branches is doing the same thing at higher volume, and automated triage posted into someone else's thread ("don't merge both", "treat #X as the primary") reads as a project decision to the person who has been waiting on one. Merge calls are the maintainers' to make.
+
+Improvements that go *beyond* resolving the conflict are welcome, just not stapled onto another person's PR: raise them in the thread and let the author decide, or open your own PR once theirs has landed.
 
 ## Scope: the core vs. the shared layer
 
@@ -140,8 +172,23 @@ node test-all.mjs --only providers/themuse   # Run just one provider's test(s)
 ```
 
 **Adding a test for a new scanner provider:** add one file at
+**Any new test belongs in its own file** under `tests/`, not as a numbered
+section inside `test-all.mjs`. Anything matching `tests/**/*.test.mjs` is
+auto-discovered, so there is nothing to register and no section number to pick.
+A new file also collides with nobody: several contributors adding sections to
+`test-all.mjs` at the same time all edit its final lines, and each merge forces
+a rebase on the rest.
+
 `tests/providers/{name}.test.mjs` — it's auto-discovered (`tests/**/*.test.mjs`),
 no registration needed. Do not add a section to `test-all.mjs` for this.
+
+**Adding a test for the web app:** web suites live under `web/tests/`, mirroring
+the tested module's path below `web/src/` (`src/lib/clean-chips.mjs` →
+`tests/lib/clean-chips.test.mjs`), named `{module}.test.mjs`. `web/`'s own
+`npm test` glob-discovers them, so no registration is needed there either — but
+keep them out of `web/src/` (Next.js scans that tree) and write them as `.mjs`,
+since there is no TypeScript loader for `node --test`. `web/README.md` has the
+detail; `tests/web-test-layout.test.mjs` enforces it on every PR.
 
 **`--only` is a dev convenience, not a PR gate:** it runs *only* the discovered
 `tests/` files matching the given substring and skips every inline core

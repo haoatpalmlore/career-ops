@@ -19,8 +19,9 @@
 
 import { chromium } from 'playwright';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
-import yaml from 'js-yaml';
+import * as yaml from 'js-yaml';
 import { appendToPipeline, appendToScanHistory, loadSeenUrls } from './scan.mjs';
+import { localToday } from './lib/local-today.mjs';
 
 // ── Config ───────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ async function main() {
   mkdirSync('data', { recursive: true });
 
   const { seen } = loadSeenUrls();
-  const date = new Date().toISOString().slice(0, 10);
+  const date = localToday();
 
   const lastScanDate = NO_DATE_FILTER ? null : loadLastScanDate();
   if (NO_DATE_FILTER) {
@@ -321,11 +322,11 @@ async function main() {
 
   if (!DRY_RUN) {
     if (newOffers.length > 0) await appendToPipeline(newOffers);
-    if (newOffers.length > 0) appendToScanHistory(newOffers, date, 'added');
-    if (titleSkipped.length > 0) appendToScanHistory(titleSkipped, date, 'skipped_title');
-    if (locationSkipped.length > 0) appendToScanHistory(locationSkipped, date, 'skipped_location');
-    if (dateSkipped.length > 0) appendToScanHistory(dateSkipped, date, 'skipped_date');
-    if (dupeSkipped.length > 0) appendToScanHistory(dupeSkipped, date, 'skipped_dup');
+    if (newOffers.length > 0) await appendToScanHistory(newOffers, date, 'added');
+    if (titleSkipped.length > 0) await appendToScanHistory(titleSkipped, date, 'skipped_title');
+    if (locationSkipped.length > 0) await appendToScanHistory(locationSkipped, date, 'skipped_location');
+    if (dateSkipped.length > 0) await appendToScanHistory(dateSkipped, date, 'skipped_date');
+    if (dupeSkipped.length > 0) await appendToScanHistory(dupeSkipped, date, 'skipped_dup');
   }
 
   // Summary

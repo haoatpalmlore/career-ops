@@ -426,6 +426,15 @@ version: 1.0.0
     page-break-after: avoid;
   }
 
+  /* Keep a project's tech line attached to the description above it.  A project
+     may still split across pages, but not at the one opportunity that strands a
+     bare "Python | github.com/..." line at the top of the next page with no
+     title or description to identify it. */
+  .project-tech {
+    break-before: avoid;
+    page-break-before: avoid;
+  }
+
   /* === RTL (Arabic) Support === */
   html[lang="ar"] body {
     direction: rtl;
@@ -514,6 +523,18 @@ version: 1.0.0
     line-break: strict;
     word-break: normal;
     overflow-wrap: break-word;
+  }
+
+  /* Traditional Chinese. `html[lang="zh"]` does not match `zh-TW`, and this
+     template's default stack is Simplified — which substitutes the wrong glyph
+     forms for TC text — so zh-TW needs TC faces explicitly. modes/zh-TW/ ships
+     as a supported locale. (No `ko` rule here on purpose: this is the Chinese
+     minimal template, not a general one.) */
+  html[lang="zh-TW"] body,
+  html[lang="zh-TW"] .contact-row {
+    font-family: 'Liberation Sans', 'Helvetica Neue', Arial, 'PingFang TC',
+      'Microsoft JhengHei', 'Noto Sans CJK TC',
+      'Noto Sans TC', 'Source Han Sans TC', sans-serif;
   }
 
   .header {
@@ -731,6 +752,8 @@ version: 1.0.0
     <div class="section-title">{{SECTION_SKILLS}}</div>
     {{SKILLS}}
   </div>
+
+  <!-- END -->
 
 </div>
 </body>
