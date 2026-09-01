@@ -12,6 +12,7 @@ import { spawnSync } from 'child_process';
 import { lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { pass, fail, warn, ROOT } from './helpers.mjs';
+import { checkGitignore } from '../fork/gitignore-check.mjs';
 
 /**
  * Ask git whether one path is ignored, keeping "git said no" and "git could not
@@ -38,6 +39,33 @@ function checkIgnore(probe) {
   if (r.status === 1) return { verdict: 'not-ignored', stderr: '' };
   const stderr = (r.stderr || r.error?.message || `git exited ${r.status}`).trim();
   return { verdict: 'unanswerable', stderr };
+}
+
+/**
+ * Same question for a FIXED probe string — a path this file makes up to test a
+ * rule, which need not exist on disk.
+ *
+ * Fork seam. On this checkout `data/`, `output/` and `reports/` are symlinks
+ * into career-ops-data, so `git check-ignore data/applications.db` refuses the
+ * pathspec outright and upstream's evaluator has nothing to fall back on: three
+ * assertions about .gitignore RULES failed over the checkout's LAYOUT. A made-up
+ * probe never needs git — the question is purely "do the root .gitignore
+ * patterns match this string", which fork/gitignore-check.mjs answers without
+ * touching the filesystem. Git stays the authority wherever it can answer; the
+ * pure evaluator is consulted only for the refusal. The declared user-layer
+ * entries above deliberately do NOT use this: for a real symlink the meaningful
+ * question is whether the link ENTRY is ignored, which git answers correctly.
+ *
+ * @param {string} probe - Repo-relative path to test.
+ * @returns {{verdict: 'ignored'|'not-ignored'|'unanswerable', stderr: string}}
+ */
+function checkIgnoreProbe(probe) {
+  const r = checkIgnore(probe);
+  if (r.verdict !== 'unanswerable') return r;
+  const pure = checkGitignore(probe, ROOT);
+  if (pure.status === 'ignored') return { verdict: 'ignored', stderr: '' };
+  if (pure.status === 'not-ignored') return { verdict: 'not-ignored', stderr: '' };
+  return { verdict: 'unanswerable', stderr: `${r.stderr}; pure evaluator: ${pure.detail}` };
 }
 
 /**
@@ -127,7 +155,7 @@ const timestampedBackupProbes = [
 ];
 
 for (const path of timestampedBackupProbes) {
-  const { verdict, stderr } = checkIgnore(path);
+  const { verdict, stderr } = checkIgnoreProbe(path);
   if (verdict === 'ignored') pass(`${path} is git-ignored`);
   else if (verdict === 'not-ignored') fail(`${path} is NOT git-ignored — a timestamped backup could expose PII`);
   else fail(`${path}: git check-ignore could not answer — ${stderr}`);
@@ -168,7 +196,7 @@ const derivedIndexProbes = derivedIndexLocations.flatMap(
 );
 
 for (const path of derivedIndexProbes) {
-  const { verdict, stderr } = checkIgnore(path);
+  const { verdict, stderr } = checkIgnoreProbe(path);
   if (verdict === 'ignored') pass(`${path} is git-ignored`);
   else if (verdict === 'not-ignored') fail(`${path} is NOT git-ignored — the derived index holds the same PII as the tracker`);
   else fail(`${path}: git check-ignore could not answer — ${stderr}`);
@@ -187,7 +215,7 @@ const scratchProbes = [
 ];
 
 for (const path of scratchProbes) {
-  const { verdict, stderr } = checkIgnore(path);
+  const { verdict, stderr } = checkIgnoreProbe(path);
   if (verdict === 'ignored') pass(`${path} is git-ignored`);
   else if (verdict === 'not-ignored') fail(`${path} is NOT git-ignored — an interrupted test run leaves it stageable`);
   else fail(`${path}: git check-ignore could not answer — ${stderr}`);
