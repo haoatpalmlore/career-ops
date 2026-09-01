@@ -58,12 +58,19 @@
 
 import { readFileSync, existsSync, appendFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const LOG_PATH = join(CAREER_OPS, 'data/application-log.tsv');
-const TRACKER_PATH = join(CAREER_OPS, 'data/applications.md');
-const REPORTS_DIR = join(CAREER_OPS, 'reports');
+// User-layer files follow the Data Root, not the codebase root: this fork
+// keeps data/ and reports/ outside the checkout, and a symlink is only one
+// of the layouts AGENTS.md sanctions (CAREER_OPS_ROOT and the
+// .career-ops-data marker are the others, and neither is a symlink).
+const DATA_ROOT = getCareerOpsRoot();
+const LOG_PATH = join(DATA_ROOT, 'data/application-log.tsv');
+const TRACKER_PATH = join(DATA_ROOT, 'data/applications.md');
+const REPORTS_DIR = join(DATA_ROOT, 'reports');
 
 export const CHANNELS = ['inbound', 'referral', 'agency', 'portal', 'easyapply'];
 export const HOOKS = ['retail', 'level', 'domain', 'none'];
@@ -581,7 +588,7 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   const a = args(process.argv.slice(2));
   if (a['self-test']) selfTest();
   else if (a._[0] === 'add') cmdAdd(a);

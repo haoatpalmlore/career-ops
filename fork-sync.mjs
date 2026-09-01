@@ -7,7 +7,8 @@ import {
 } from 'fs';
 import { dirname, join, relative, resolve, sep } from 'path';
 import { createHash } from 'crypto';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+import { isMainModule } from './lib/is-main-module.mjs';
 
 export const ROOT = dirname(fileURLToPath(import.meta.url));
 export const STATE_FILE = join(ROOT, '.git', 'fork-sync-state.json');
@@ -165,7 +166,7 @@ function abortSync() {
   return { ok: true, aborted: true };
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = isMainModule(import.meta.url);
 if (isMain) {
   try {
     const [command = 'doctor', ref] = process.argv.slice(2);

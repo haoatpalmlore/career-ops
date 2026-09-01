@@ -442,7 +442,12 @@ if (dupeNums === 0) ok('No duplicate tracker numbers');
 // its module header).
 let syncResult;
 try {
-  syncResult = checkTrackerSync({ appsFile: APPS_FILE });
+  syncResult = checkTrackerSync({
+    appsFile: APPS_FILE,
+    interviewsFile: process.env.CAREER_OPS_TRACKER
+      ? join(dirname(APPS_FILE), 'active-interviews.md')
+      : undefined,
+  });
 } catch (err) {
   // A check that could not RUN is a failed check, not a warning. warn() does not affect the exit
   // code, so a throw here made verify-pipeline print a notice and still exit 0 — and to anything
@@ -486,7 +491,9 @@ if (syncResult) {
 // Path resolution deliberately matches the two consumers (CAREER_OPS/data/...)
 // rather than APPS_FILE's directory: the check exists to predict what they will
 // do, so it has to read the same file they read.
-const FOLLOWUPS_FILE = join(CAREER_OPS, 'data', 'follow-ups.md');
+const FOLLOWUPS_FILE = process.env.CAREER_OPS_TRACKER
+  ? join(dirname(APPS_FILE), 'follow-ups.md')
+  : join(CAREER_OPS, 'data', 'follow-ups.md');
 const FOLLOWUPS_COLUMNS = '| num | appNum | date | company | role | channel | contact | notes |';
 if (!existsSync(FOLLOWUPS_FILE)) {
   ok('No follow-ups.md yet — nothing to schema-check');

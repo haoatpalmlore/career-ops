@@ -962,9 +962,17 @@ function countRenderedPdfPages(pdfBuffer) {
  */
 export function workspaceRelativeManifestPath(pathValue, rootDir = currentWorkspaceRoot()) {
   if (!pathValue) return '';
-  const rel = relative(rootDir, resolve(pathValue));
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return '';
-  return rel.split(sep).join('/');
+  const absolute = resolve(pathValue);
+  // A managed overlay has two legitimate lexical namespaces: versioned code
+  // under the install root, and user artifacts under the tracker workspace.
+  // Preserve the transparent repo spelling for either one.
+  for (const base of [rootDir, __dirname]) {
+    const rel = relative(base, absolute);
+    if (rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)) {
+      return rel.split(sep).join('/');
+    }
+  }
+  return '';
 }
 
 /** @deprecated Use workspaceRelativeManifestPath. */
