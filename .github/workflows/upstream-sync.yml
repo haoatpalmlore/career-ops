@@ -1,0 +1,58 @@
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Fetch canonical branch and release tags
+        run: |
+          git fetch --force --no-tags https://github.com/santifer/career-ops.git main:refs/remotes/canonical/main
+          git fetch --force --no-tags https://github.com/santifer/career-ops.git '+refs/tags/career-ops-v*:refs/tags/career-ops-v*'
+      - name: Propose reviewed merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --repo "$REPOSITORY" --base main --state open --search 'head:sync/upstream-' --json number --jq '.[0].number // empty')"
+          canonical="$(git rev-parse refs/remotes/canonical/main)"
+          if [[ -n "$existing" ]]; then
+            marker='<!-- upstream-sync-status -->'
+            body="$marker
+Canonical upstream is currently at \`$canonical\`. This PR was left untouched so human conflict resolutions are preserved."
+            comment_id="$(gh api "repos/$REPOSITORY/issues/$existing/comments" --paginate --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -1)"
+            if [[ -n "$comment_id" ]]; then
+              gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -f body="$body"
+            else
+              gh pr comment "$existing" --repo "$REPOSITORY" --body "$body"
+            fi
+            exit 0
+          fi
+          if git merge-base --is-ancestor refs/remotes/canonical/main origin/main; then
+            echo 'Fork main already contains canonical upstream main.'
+            exit 0
+          fi
+          branch="sync/upstream-$(date -u +%F)"
+          git checkout --detach refs/remotes/canonical/main
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
+            --title "chore: sync canonical upstream $(date -u +%F)" \
+            --body "Merge-based synchronization from santifer/career-ops. Never auto-merge; review conflicts, fork invariants, and the complete CI matrix."

@@ -150,6 +150,7 @@ function runInvariants() {
     'tests/helpers.mjs': 'documented CodeQL suppression for the executable-allowlisted argv-only test runner',
     'generate-pdf.mjs': 'manifest paths accept both code and managed data-overlay namespaces',
     'verify-pipeline.mjs': 'tracker overrides isolate sibling user-layer files in fixtures',
+    'tests/user-layer-gitignored.test.mjs': 'fixed .gitignore probes fall back to fork/gitignore-check.mjs when git refuses a pathspec beyond a symlink',
   };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
