@@ -31,7 +31,9 @@
 
 import { readFileSync, existsSync, writeFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 import { execFileSync } from 'child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -197,7 +199,9 @@ function runMetrics() {
   const cal = sh([join(HERE, 'apply-log.mjs'), '--calibration']);
   if (cal) { try { const j = JSON.parse(cal); m.falsifiers = j.reportsWithFalsifier; m.predictionsResolved = j.decided; m.predictionAccuracy = j.accuracy; } catch {} }
   try {
-    const files = readdirSync(join(HERE, 'reports')).filter(f => f.endsWith('.md'));
+    // reports/ is user layer -> Data Root. Every other join(HERE, ...) in this
+    // file addresses repo code and stays anchored to the codebase root.
+    const files = readdirSync(join(getCareerOpsRoot(), 'reports')).filter(f => f.endsWith('.md'));
     m.reports = files.length;
   } catch {}
   return m;
@@ -273,7 +277,7 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   const argv = process.argv.slice(2);
   if (argv.includes('--self-test')) selfTest();
   else {

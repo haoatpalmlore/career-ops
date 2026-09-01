@@ -125,7 +125,9 @@ export function rollupRequirements(tsvText) {
 
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -139,7 +141,9 @@ const SCHEMA_VERSION_FALLBACK = (() => {
 })();
 
 export function runRequirementsCli(argv, schemaVersion = null) {
-  const REQ_FILE = join(HERE, 'data/role-requirements.tsv');
+  // data/ is user layer -> Data Root; HERE stays the codebase root, which is
+  // still correct for reading upskill.mjs's SCHEMA_VERSION above.
+  const REQ_FILE = join(getCareerOpsRoot(), 'data/role-requirements.tsv');
   if (!existsSync(REQ_FILE)) {
     console.error('No data/role-requirements.tsv found. Run critic-mode evaluations first.');
     process.exit(1);
@@ -210,7 +214,7 @@ export function selfTest() {
   process.exit(failures.length ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   if (process.argv.includes('--self-test')) selfTest();
   else if (process.argv.includes('--requirements')) runRequirementsCli(process.argv.slice(2), SCHEMA_VERSION_FALLBACK);
   else console.log('usage: node upskill-ext.mjs --requirements [--summary] | --self-test');

@@ -31,10 +31,14 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
+import { isMainModule } from './lib/is-main-module.mjs';
+import { getCareerOpsRoot } from './path-resolver.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
-const REPORTS_DIR = join(CAREER_OPS, 'reports');
+// reports/ is user layer, so it follows the Data Root rather than the
+// codebase root (AGENTS.md, Path Resolution Override & Precedence).
+const REPORTS_DIR = join(getCareerOpsRoot(), 'reports');
 
 // Hedges that make a prediction untestable. A falsifier containing one of
 // these is not a prediction, it is a disclaimer.
@@ -240,7 +244,7 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   const argv = process.argv.slice(2);
   if (argv.includes('--self-test')) selfTest();
   else if (argv.includes('--all')) {
