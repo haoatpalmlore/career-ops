@@ -170,6 +170,10 @@ const isMain = isMainModule(import.meta.url);
 if (isMain) {
   try {
     const [command = 'doctor', ref] = process.argv.slice(2);
+    if (command === '--help' || command === '-h') {
+      console.log('Usage:\n  node fork-sync.mjs setup|doctor|start [ref]|continue|abort\n  node fork-sync.mjs --help');
+      process.exit(0);
+    }
     const result = command === 'doctor' ? doctor()
       : command === 'setup' ? { ok: true, localPaths: writeLocalPaths(ROOT).split('\n').filter(Boolean).length - 1 }
       : command === 'start' ? start(ref)

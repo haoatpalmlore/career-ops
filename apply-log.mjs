@@ -588,8 +588,22 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
+const USAGE = `Usage:
+  node apply-log.mjs add --company <name> --role <title> --channel <${CHANNELS.join('|')}>
+                         [--hook retail|level|domain|none] [--gates N] [--score X.X]
+                         [--tracker <num>] [--date YYYY-MM-DD] [--note "..."]
+  node apply-log.mjs outcome (--company <name> [--role <title>] | --tracker <num>)
+                             --set <outcome> [--date YYYY-MM-DD]
+  node apply-log.mjs backfill [--commit]   # seed from data/applications.md
+  node apply-log.mjs [--summary | --validate] [--silence-after <days>]
+  node apply-log.mjs --calibration [--summary]
+  node apply-log.mjs --self-test
+  node apply-log.mjs --help`;
+
 if (isMainModule(import.meta.url)) {
-  const a = args(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) { console.log(USAGE); process.exit(0); }
+  const a = args(argv);
   if (a['self-test']) selfTest();
   else if (a._[0] === 'add') cmdAdd(a);
   else if (a._[0] === 'outcome') cmdOutcome(a);

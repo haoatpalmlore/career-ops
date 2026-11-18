@@ -144,15 +144,13 @@ function runInvariants() {
   // place in writing.
   const EXPECTED_MODIFIED = {
     'upskill.mjs': 'integration seams for archetype weighting — the five named in LOCAL-CHANGES.md',
-    'update-system.mjs': 'USER_PATHS registration; fork files must be never-touch, not upstream-fetched',
     '.github/workflows/test.yml': 'canonical tag bootstrap and fork-specific CI gate',
     '.github/workflows/signature-ci.yml': 'signature-only validator skips ordinary fork integration PRs',
     'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',
-    'test-all.mjs': 'symlink-safe gitignore assertions for the external-data overlay',
+    'test-all.mjs': 'symlink-safe gitignore assertions for the external-data overlay; fork self-tests registered in the scripts list',
     'tests/helpers.mjs': 'documented CodeQL suppression for the executable-allowlisted argv-only test runner',
     'generate-pdf.mjs': 'manifest paths accept both code and managed data-overlay namespaces',
     'verify-pipeline.mjs': 'tracker overrides isolate sibling user-layer files in fixtures',
-    'tests/user-layer-gitignored.test.mjs': 'fixed .gitignore probes fall back to fork/gitignore-check.mjs when git refuses a pathspec beyond a symlink',
   };
   try {
     const base = execFileSync('git', ['merge-base', 'upstream/main', 'HEAD'], { cwd: HERE, encoding: 'utf8' }).trim();
@@ -277,8 +275,17 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
+const USAGE = `Usage:
+  node system-check.mjs                     # full run, exit 1 on failure
+  node system-check.mjs --json
+  node system-check.mjs --snapshot <file>   # record state before an update
+  node system-check.mjs --diff <file>       # what changed since the snapshot
+  node system-check.mjs --self-test
+  node system-check.mjs --help`;
+
 if (isMainModule(import.meta.url)) {
   const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) { console.log(USAGE); process.exit(0); }
   if (argv.includes('--self-test')) selfTest();
   else {
     const diffIdx = argv.indexOf('--diff');

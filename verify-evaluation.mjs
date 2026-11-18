@@ -244,8 +244,15 @@ function selfTest() {
   process.exit(fail.length ? 1 : 0);
 }
 
+const USAGE = `Usage:
+  node verify-evaluation.mjs <report.md>     # one report, exit 1 if non-compliant
+  node verify-evaluation.mjs --all [--json]  # compliance rate across reports/
+  node verify-evaluation.mjs --self-test
+  node verify-evaluation.mjs --help`;
+
 if (isMainModule(import.meta.url)) {
   const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) { console.log(USAGE); process.exit(0); }
   if (argv.includes('--self-test')) selfTest();
   else if (argv.includes('--all')) {
     const files = readdirSync(REPORTS_DIR).filter(f => f.endsWith('.md')).sort();

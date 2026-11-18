@@ -18,22 +18,33 @@ Run `node system-check.mjs` to assert all of this still holds.
 | `LOCAL-CHANGES.md` | **new** | none | This file. Load-bearing: `system-check.mjs` tells operators to justify any new upstream-file edit here. |
 | `WORKED-EXAMPLE.md` | **new** | none | The reproducible trace. Kept at repo root, **not** under `docs/` — `docs/` is a `SYSTEM_PATHS` prefix, and a fork file must not sit inside one. |
 | `regression/` | **new** | none | Eight fixtures, each a real failure this system made. |
-| `upskill.mjs` | **modified** | **the only real one** | `+42 -5` against merge-base — integration seams only (thread `archetype` through, accept a relevance function, delegate `--requirements`). Was `+195` before the extraction. |
+| `upskill.mjs` | **modified** | **the only real one** | `+51 -6` against v1.40.0 — integration seams only (thread `archetype` through, accept a relevance function, delegate `--requirements`). Was `+195` before the extraction. |
 | `modes/_custom.md` | symlink | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives in the data layer, outside the repo — an update cannot reach it. |
 | `data/application-log.tsv` | symlink | none | User layer. |
-| `update-system.mjs` | **modified** | low | Six `USER_PATHS` entries registered. See below. |
-| `fork/owned-paths.txt` | **new** | none | Versioned ownership manifest; `fork-sync doctor` generates ignored `config/local-paths.txt`. |
+| `fork/owned-paths.txt` | **new** | none | Versioned ownership manifest; `fork-sync doctor`/`setup` generates ignored `config/local-paths.txt`, upstream's declared local user layer. See below. |
 | `fork-sync.mjs` | **new** | none | Transactional external-data overlay manager (`doctor`, `start`, `continue`, `abort`). |
+| `fork/fork-sync-check.mjs` | **new** | none | fork-sync regression checks, run by the `fork-invariants` CI job. Not named `*.test.mjs`: v1.40 fails any such file outside `tests/`. |
 | `.github/workflows/upstream-sync.yml` | **new** | low | Weekly reviewed, never-auto-merged upstream sync proposal. |
 | `.github/workflows/test.yml` | **modified** | low | Fetches canonical tags and runs fork invariants. |
 | `.github/workflows/signature-ci.yml` | **modified** | low | Makes the signature-only validator a no-op for ordinary integration PRs. |
 | `AGENTS.md` | **modified** | low | Fork-safe GitHub CLI targeting: resolve shorthand PR/issue references from `origin`, preflight mutations, and explicitly qualify every repository target. |
-| `test-all.mjs` | **modified** | low | Regression guard that keeps the GitHub CLI targeting contract present in `AGENTS.md`. |
-| `tests/helpers.mjs` | **modified** | low | Symlink-safe `.gitignore` rule evaluator backed by an isolated temporary Git repository. |
-| `tests/user-layer-gitignored.test.mjs` | **modified** | low | Uses the isolated evaluator so external user-layer symlinks do not turn valid ignore rules into Git pathspec errors. |
-| `tests/generate-pdf-page-budget.test.mjs` | **modified** | low | Keeps PDF fixtures in the repo-root `.tmp-script-test-*` scratch namespace instead of the symlinkable `output/` user layer. |
+| `test-all.mjs` | **modified** | low | Imports `checkGitignore` from `fork/gitignore-check.mjs`, and registers the `--self-test` of `system-check`, `upskill-ext` and `verify-evaluation` in the `scripts` list (v1.40 fails any self-test nothing launches). |
+| `tests/helpers.mjs` | **modified** | low | Comment-only: documents why `run()` is safe, for the CodeQL handover below. |
+| `generate-pdf.mjs`, `verify-pipeline.mjs` | **modified** | low | Data Root adoption, recovered after the 2026-09-01 rebase dropped them. |
 
-## Why the fork files are in `USER_PATHS`, not `SYSTEM_PATHS`
+## Why the fork files are declared in `config/local-paths.txt`, not `SYSTEM_PATHS`
+
+**Since v1.40.0 the fork no longer edits `update-system.mjs`.** Until then the fork
+registered its files in `USER_PATHS`. Upstream then added a declared local user layer
+(#2421): `config/local-paths.txt`, gitignored, read at runtime, and merged into
+`effectiveUserPaths()`, so a path in it gets exactly the `USER_PATHS` guarantee.
+`fork-sync.mjs setup` (and `doctor`) generates it from the versioned `fork/owned-paths.txt`.
+The old `USER_PATHS` block also broke v1.40's `no-user-data-batch-guard` test, which
+requires every `USER_PATHS` entry to be blocked by the no-user-data workflow. A clean
+checkout must run `node fork-sync.mjs setup` before `test-all.mjs`, as the
+`fork-invariants` CI job does, or the path-coverage check fails on the fork files.
+
+The reasoning below still decides *which* list a fork file belongs to.
 
 `validate-system-paths-coverage.mjs` requires every tracked file to be claimed by one list
 or the other, and `test-all.mjs` fails until it is. The obvious reading is that `.mjs`
@@ -89,7 +100,17 @@ The only behavioural integration conflict should be in `upskill.mjs`, in these p
 the `--requirements` CLI delegation · the self-test block. Take upstream's version of the
 surrounding code and reapply those five seams.
 
-`AGENTS.md`, `test-all.mjs`, and `update-system.mjs` are also intentional upstream-file
+Since v1.40.0 upstream's `aggregateGaps` takes its own third parameter, `companyNames`, so
+the fork's `relevanceOf` is the **fourth** and the fork self-test passes `new Set()` for
+the third. `parseReportGaps` returns upstream's `requirements` and the fork's `archetype`
+side by side. Append fork parameters after upstream's; never reorder theirs.
+
+`tests/user-layer-gitignored.test.mjs` was a fork seam until v1.40.0, when upstream made
+the test symlink-aware itself (`checkIgnoreThroughSymlinks`, #3165). The rebase took
+upstream's version and dropped the seam. `fork/gitignore-check.mjs` stays, since
+`test-all.mjs` still uses it.
+
+`AGENTS.md` and `test-all.mjs` are also intentional upstream-file
 edits. They are narrow guard/registration seams, but an upstream edit to the same regions
 can still conflict; preserve the inventory rows above and rerun both `node test-all.mjs`
 and `node system-check.mjs` after rebasing.
@@ -105,6 +126,11 @@ and `node system-check.mjs` after rebasing.
   there is not enough yet — `--validate` currently returns INSUFFICIENT DATA by design.
 
 ## Open CI handover: inherited CodeQL finding
+
+**Status 2026-11-18:** PR #2 is closed, unmerged. Fork `main` is an ancestor of
+`career-ops-v1.40.0`, so option 3 below is now a plain fast-forward. Fast-forward
+`origin/main` to the release tag, then open the rebased branch against it, and the
+PR diff is only the fork's own files. The history below records why that matters.
 
 PR #2 synchronizes a fork whose `main` branch was roughly 200 upstream commits
 behind. GitHub reports that it cannot retrieve the full PR diff because more than

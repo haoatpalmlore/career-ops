@@ -215,6 +215,10 @@ export function selfTest() {
 }
 
 if (isMainModule(import.meta.url)) {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    console.log('Usage:\n  node upskill-ext.mjs --requirements [--summary]\n  node upskill-ext.mjs --self-test\n  node upskill-ext.mjs --help');
+    process.exit(0);
+  }
   if (process.argv.includes('--self-test')) selfTest();
   else if (process.argv.includes('--requirements')) runRequirementsCli(process.argv.slice(2), SCHEMA_VERSION_FALLBACK);
   else console.log('usage: node upskill-ext.mjs --requirements [--summary] | --self-test');
