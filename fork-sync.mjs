@@ -169,14 +169,17 @@ function abortSync() {
 const isMain = isMainModule(import.meta.url);
 if (isMain) {
   try {
-    const [command = 'doctor', ref] = process.argv.slice(2);
-    if (command === '--help' || command === '-h') {
+    const argv = process.argv.slice(2);
+    const [command = 'doctor', ref] = argv;
+    // Anywhere in argv: `start --help` must not take --help as the ref and move
+    // the overlays aside.
+    if (argv.includes('--help') || argv.includes('-h')) {
       console.log('Usage:\n  node fork-sync.mjs setup|doctor|start [ref]|continue|abort\n  node fork-sync.mjs --help');
       process.exit(0);
     }
     const result = command === 'doctor' ? doctor()
       : command === 'setup' ? { ok: true, localPaths: writeLocalPaths(ROOT).split('\n').filter(Boolean).length - 1 }
-      : command === 'start' ? start(ref)
+      : command === 'start' ? (ref && ref.startsWith('-') ? (() => { throw new Error(`not a ref: ${ref}`); })() : start(ref))
       : command === 'continue' ? continueSync()
       : command === 'abort' ? abortSync()
       : (() => { throw new Error('usage: node fork-sync.mjs setup|doctor|start [ref]|continue|abort'); })();

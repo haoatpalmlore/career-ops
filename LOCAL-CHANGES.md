@@ -41,8 +41,15 @@ registered its files in `USER_PATHS`. Upstream then added a declared local user 
 `fork-sync.mjs setup` (and `doctor`) generates it from the versioned `fork/owned-paths.txt`.
 The old `USER_PATHS` block also broke v1.40's `no-user-data-batch-guard` test, which
 requires every `USER_PATHS` entry to be blocked by the no-user-data workflow. A clean
-checkout must run `node fork-sync.mjs setup` before `test-all.mjs`, as the
-`fork-invariants` CI job does, or the path-coverage check fails on the fork files.
+checkout must run `node fork-sync.mjs setup` before `test-all.mjs`, or the path-coverage
+check fails on the fork files. The `test` job in `.github/workflows/test.yml` runs it for
+that reason, and so does `fork-invariants`.
+
+`.github/workflows/upstream-sync.yml` cannot be declared there: `.github/` is a
+`SYSTEM_PATHS` prefix and `localUserPaths()` refuses it. It still survives `apply`, because
+`wasEverShippedUpstream()` keeps the updater from deleting a file upstream never had.
+`apply --force` would overwrite the fork's edits to `test.yml` and `signature-ci.yml`,
+which is one more reason to update by rebase, never by `apply`.
 
 The reasoning below still decides *which* list a fork file belongs to.
 
@@ -95,10 +102,13 @@ Step 3 reports checks that broke, checks that disappeared, and metric drift sepa
 A broken or removed check fails the run; metric drift never does — the funnel moving is
 information, not a regression.
 
-The only behavioural integration conflict should be in `upskill.mjs`, in these places:
-`parseReportGaps` return value · `aggregateGaps` signature · the `analyze()` call site ·
-the `--requirements` CLI delegation · the self-test block. Take upstream's version of the
-surrounding code and reapply those five seams.
+The only behavioural integration conflict should be in `upskill.mjs`, in these seven places:
+the `upskill-ext.mjs` import/re-export block · `parseReportGaps` return value ·
+`aggregateGaps` signature · the `analyze()` call site · `--requirements` in `KNOWN_FLAGS`
+and `USAGE` · the `--requirements` CLI delegation · the self-test block. Take upstream's
+version of the surrounding code and reapply all seven. Missing the `KNOWN_FLAGS` entry is
+silent until it is used: `validateFlags` then rejects `--requirements` before the
+delegation runs.
 
 Since v1.40.0 upstream's `aggregateGaps` takes its own third parameter, `companyNames`, so
 the fork's `relevanceOf` is the **fourth** and the fork self-test passes `new Set()` for

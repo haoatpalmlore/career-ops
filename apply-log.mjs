@@ -595,8 +595,8 @@ const USAGE = `Usage:
   node apply-log.mjs outcome (--company <name> [--role <title>] | --tracker <num>)
                              --set <outcome> [--date YYYY-MM-DD]
   node apply-log.mjs backfill [--commit]   # seed from data/applications.md
-  node apply-log.mjs [--summary | --validate] [--silence-after <days>]
-  node apply-log.mjs --calibration [--summary]
+  node apply-log.mjs [--summary | --validate] [--silence-after <days>] [--today YYYY-MM-DD]
+  node apply-log.mjs --calibration [--summary] [--today YYYY-MM-DD]
   node apply-log.mjs --self-test
   node apply-log.mjs --help`;
 

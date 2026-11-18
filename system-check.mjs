@@ -143,7 +143,7 @@ function runInvariants() {
   // touched fails even if the total stays flat, and each entry has to earn its
   // place in writing.
   const EXPECTED_MODIFIED = {
-    'upskill.mjs': 'integration seams for archetype weighting — the five named in LOCAL-CHANGES.md',
+    'upskill.mjs': 'integration seams for archetype weighting — the seven named in LOCAL-CHANGES.md',
     '.github/workflows/test.yml': 'canonical tag bootstrap and fork-specific CI gate',
     '.github/workflows/signature-ci.yml': 'signature-only validator skips ordinary fork integration PRs',
     'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',

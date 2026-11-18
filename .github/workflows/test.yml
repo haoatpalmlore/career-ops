@@ -112,6 +112,10 @@ jobs:
       # browser, and those skip here and run in the tool-suites job instead.
       - if: env.SKIP_LEG != 'true'
         run: npm install --ignore-scripts
+      # Fork: declare the fork's own files (config/local-paths.txt, gitignored)
+      # before the path-coverage check in test-all.mjs reads them.
+      - if: env.SKIP_LEG != 'true'
+        run: node fork-sync.mjs setup
       - if: env.SKIP_LEG != 'true'
         run: node test-all.mjs --quick
       - name: Go dashboard tests
