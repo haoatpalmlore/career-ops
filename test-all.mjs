@@ -950,6 +950,10 @@ const scripts = [
   { name: 'update-system.mjs check', expectExit: 0 },
   { name: 'seed-fixture.mjs --self-test', expectExit: 0 },
   { name: 'archive-posting.mjs --help', expectExit: 0 },
+  // Fork-local self-tests (see LOCAL-CHANGES.md).
+  { name: 'system-check.mjs --self-test', expectExit: 0 },
+  { name: 'upskill-ext.mjs --self-test', expectExit: 0 },
+  { name: 'verify-evaluation.mjs --self-test', expectExit: 0 },
 ];
 
 const scriptTmp = mkdtempSync(join(ROOT, SCRATCH_PREFIX));

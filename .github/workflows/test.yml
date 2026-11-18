@@ -255,4 +255,4 @@ jobs:
       - run: npm install --ignore-scripts
       - run: node fork-sync.mjs setup
       - run: node system-check.mjs
-      - run: node fork/fork-sync.test.mjs
+      - run: node fork/fork-sync-check.mjs
