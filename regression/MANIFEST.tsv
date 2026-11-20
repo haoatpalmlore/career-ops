@@ -1,0 +1,12 @@
+# Regression corpus — every case is a real failure this system actually made.
+# A fixture that fails for the WRONG reason is not pinning its rule, so each
+# row names the error text that must appear. r1 alone trips three errors.
+# id	fixture	expect	expectError	origin	what it pins down
+r1	r1-185-no-breakdown.md	fail	no ## Score Breakdown	report #185, first published 2026-08-18	Score 3.9 with no Score Breakdown section — the number could not be reconstructed from its own report, which is how the inflation survived.
+r2	r2-185-no-case-against.md	fail	no ## Case Against	report #185, after Scoring Rules	Breakdown reconciles and the lift is legal, but there is no Case Against and no falsifier. Arithmetic discipline alone does not make an evaluation honest.
+r3	r3-185-compliant.md	pass		report #185, final state	The compliant shape. If this ever starts failing, a rule changed underneath the corpus.
+r4	r4-out-of-five-notation.md	pass		verify-evaluation.mjs parser bug	Reports write "3.3/5". A naive last-numeric-wins parser read the denominator 5 as the score. Caught by the validator against a real report, not by review.
+r5	r5-hedged-falsifier.md	fail	is hedged	Falsification rule, modes/_custom.md	"may progress if conditions are favourable" is a disclaimer, not a prediction. An unfalsifiable falsifier is the failure mode the whole mechanism exists to prevent.
+r6	r6-no-scale-check.md	fail	never mentions scale	report #185 Block B	A Case Against that lists paper-credential gaps but never asks whether the evidence was produced at the role's scale. This is the exact #185 failure wearing the new section's clothes.
+r7	r7-score-disagreement.md	fail	disagrees with Score Breakdown Global	Scoring Rules item 5	Header, Machine Summary and Global must agree. Divergence means a correction was applied in one place only.
+r8	r8-lift-over-cap.md	fail	exceeds the +/-0.3 cap	report #185, the original inflation	Baseline 3.075 published as 3.6 — a +0.525 holistic lift. This is the shape of the original 3.9.

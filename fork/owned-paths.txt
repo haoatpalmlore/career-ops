@@ -1,0 +1,10 @@
+# Fork-new paths only. Upstream-owned files must never be listed here.
+apply-log.mjs
+verify-evaluation.mjs
+system-check.mjs
+upskill-ext.mjs
+fork-sync.mjs
+LOCAL-CHANGES.md
+WORKED-EXAMPLE.md
+regression/
+fork/

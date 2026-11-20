@@ -108,6 +108,11 @@ export const SCHEMA_VERSION = 2;
 // gaps matter most. Matches the apply threshold in Ethical Use (CLAUDE.md).
 const LOW_FIT_SCORE = 4.0;
 
+// Local fork extensions live in their own file so upstream rebases never
+// collide with them — see LOCAL-CHANGES.md.
+import { archetypeRelevance, parseTargetArchetypes, normalizeRequirement, rollupRequirements } from './upskill-ext.mjs';
+export { archetypeRelevance, parseTargetArchetypes, normalizeRequirement, rollupRequirements };
+
 // Skill vocabulary + canonical extractor moved to skill-extract.mjs (#1896) so
 // upskill, jd-skill-gap, and analyze-patterns share ONE source of truth. Re-
 // exported here so existing importers of extractSkills keep working unchanged.
@@ -321,7 +326,13 @@ export function parseReportGaps(content) {
     }
   }
 
-  return { score, gapText: gapDescriptions.join('\n'), hasMachineSummary, requirements };
+  let archetype = summary && typeof summary.archetype === 'string' ? summary.archetype : null;
+  if (!archetype) {
+    const am = plain.match(/^\s*Archetype:\s*(.+)$/mi);
+    if (am) archetype = am[1].trim();
+  }
+
+  return { score, gapText: gapDescriptions.join('\n'), hasMachineSummary, requirements, archetype };
 }
 
 /**
@@ -345,7 +356,7 @@ export function companyKey(name) {
  *   has evaluated (see companyKey). A skill token that IS one of them is an
  *   employer being cited, not a skill being demanded.
  */
-export function aggregateGaps(reports, knownSkills, companyNames = new Set()) {
+export function aggregateGaps(reports, knownSkills, companyNames = new Set(), relevanceOf = () => 1.0) {
   const scored = reports.filter(r => Number.isFinite(r.score));
   const lowFit = scored.filter(r => r.score < LOW_FIT_SCORE);
   const totalLowFit = lowFit.length;
@@ -386,7 +397,8 @@ export function aggregateGaps(reports, knownSkills, companyNames = new Set()) {
       const entry = bySkill.get(skill);
       entry.reports += 1;
       entry.sources.push(report.num);
-      const weight = Number.isFinite(report.score) ? Math.max(0, 5.0 - report.score) : 1.0;
+      const base = Number.isFinite(report.score) ? Math.max(0, 5.0 - report.score) : 1.0;
+      const weight = base * relevanceOf(report);
       entry.weightedScore += weight;
       if (Number.isFinite(report.score) && report.score < LOW_FIT_SCORE) entry.lowFitReports += 1;
     }
@@ -490,7 +502,7 @@ function analyze(minReports) {
     }
     if (content === null) continue;
     reportsRead += 1;
-    const { score, gapText, hasMachineSummary, requirements } = parseReportGaps(content);
+    const { score, gapText, hasMachineSummary, requirements, archetype } = parseReportGaps(content);
     if (hasMachineSummary) reportsWithMachineSummary += 1;
     const trackerScore = parseFloat(row.score);
     parsedReports.push({
@@ -500,6 +512,7 @@ function analyze(minReports) {
       date: row.date,
       state: resolveCanonicalStateId(row.status, states),
       requirements,
+      archetype,
     });
   }
 
@@ -519,8 +532,11 @@ function analyze(minReports) {
   );
   const knownSkills = extractSkills(knownText);
 
+  const targets = parseTargetArchetypes(existsSync(PROFILE_FILE) ? readFileSync(PROFILE_FILE, 'utf-8') : '');
+  const useRelevance = targets.length > 0 && !process.argv.includes('--all-archetypes');
+  const relevanceOf = useRelevance ? (r => archetypeRelevance(r.archetype, targets)) : (() => 1.0);
   const { gaps, excludedAsKnown, excludedAsCompanyName, totalLowFit } =
-    aggregateGaps(parsedReports, knownSkills, companyNames);
+    aggregateGaps(parsedReports, knownSkills, companyNames, relevanceOf);
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -533,6 +549,8 @@ function analyze(minReports) {
       lowFitScoreThreshold: LOW_FIT_SCORE,
       knownSkillCount: knownSkills.size,
       trackedCompanyCount: companyNames.size,
+      archetypeWeighted: useRelevance,
+      targetArchetypes: targets.map(t => `${t.name} (${t.fit || 'unspecified'})`),
     },
     gaps,
     excludedAsKnown,
@@ -767,6 +785,24 @@ soft_gaps:
   }
 
 
+  // --- archetype weighting (fork extension; pure fns tested in upskill-ext.mjs) ---
+  {
+    const targets = parseTargetArchetypes('target_roles:\n  archetypes:\n    - name: "AI Solutions Architect"\n      fit: "primary"\n');
+    const reps = [
+      { num: 1, score: 2.0, gapText: 'React', archetype: 'Frontend Engineer' },
+      { num: 2, score: 2.0, gapText: 'React', archetype: 'Frontend Engineer' },
+      { num: 3, score: 4.0, gapText: 'Kubernetes', archetype: 'AI Solutions Architect' },
+    ];
+    const { gaps: gw } = aggregateGaps(reps, new Set(), new Set(), r => archetypeRelevance(r.archetype, targets));
+    if (!gw.length || gw[0].skill !== 'Kubernetes') {
+      failures.push(`archetype weighting: on-target gap should rank first, got ${gw.map(g => g.skill).join(',')}`);
+    }
+    const { gaps: gu } = aggregateGaps(reps, new Set());
+    if (!gu.length || gu[0].skill !== 'React') {
+      failures.push('unweighted aggregation should still rank React first (upstream-behaviour regression guard)');
+    }
+  }
+
   if (failures.length > 0) {
     console.error(`upskill self-test failed: ${failures.join('; ')}`);
     process.exit(1);
@@ -843,7 +879,7 @@ const isMain = isMainModule(import.meta.url);
 // Handled via lib/cli-flags.mjs's validateFlags() (#2775), same shape as
 // doctor.mjs (#2874) — checked before --self-test/--url-text/--min-reports
 // are read, and before --help, so `--help --bogus` still errors.
-const KNOWN_FLAGS = ['--min-reports', '--summary', '--url-text', '--self-test', '--help', '-h'];
+const KNOWN_FLAGS = ['--min-reports', '--summary', '--url-text', '--self-test', '--requirements', '--help', '-h'];
 
 // Only --min-reports and --url-text take a value, as the next argv token or as
 // `--flag=value`. validateFlags accepts either form, so both are read with
@@ -857,6 +893,7 @@ const USAGE = `Usage:
   node upskill.mjs --min-reports <n>      # minimum scored reports required (default 5)
   node upskill.mjs --url-text <url|path>  # targeted gap analysis vs one JD (URL or local file)
   node upskill.mjs <url>                  # same as --url-text <url>
+  node upskill.mjs --requirements         # cluster data/role-requirements.tsv (fork)
   node upskill.mjs --self-test            # run the pure-function self-tests
   node upskill.mjs --help                 # show this message`;
 
@@ -872,6 +909,14 @@ if (isMain) {
   // deliberately left alone here.
   validateFlags(args, KNOWN_FLAGS, USAGE, { valueFlags: VALUE_FLAGS, requireOperand: true });
   if (args.includes('--self-test')) runSelfTest();
+
+  // --- Requirement rollup (fork seam; implementation in upskill-ext.mjs) ---
+  // Kept to a one-line delegation on purpose: new files never conflict on a
+  // rebase, edits to this upstream file do. See LOCAL-CHANGES.md.
+  if (args.includes('--requirements')) {
+    const { runRequirementsCli } = await import('./upskill-ext.mjs');
+    runRequirementsCli(args, SCHEMA_VERSION);
+  }
 
   // ====== SECURE TARGETED MODE PHASE 2a IMPLEMENTATION ======
   const urlTextGiven = hasFlag(args, '--url-text');

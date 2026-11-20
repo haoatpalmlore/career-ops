@@ -112,6 +112,10 @@ jobs:
       # browser, and those skip here and run in the tool-suites job instead.
       - if: env.SKIP_LEG != 'true'
         run: npm install --ignore-scripts
+      # Fork: declare the fork's own files (config/local-paths.txt, gitignored)
+      # before the path-coverage check in test-all.mjs reads them.
+      - if: env.SKIP_LEG != 'true'
+        run: node fork-sync.mjs setup
       - if: env.SKIP_LEG != 'true'
         run: node test-all.mjs --quick
       - name: Go dashboard tests
@@ -238,3 +242,21 @@ jobs:
           node-version: '24'
       - run: npm install --ignore-scripts
       - run: npm audit --audit-level=high
+
+  fork-invariants:
+    name: Fork invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git remote add upstream https://github.com/santifer/career-ops.git
+      - run: git fetch upstream main '+refs/tags/career-ops-v*:refs/tags/career-ops-v*'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts
+      - run: node fork-sync.mjs setup
+      - run: node system-check.mjs
+      - run: node fork/fork-sync-check.mjs

@@ -77,6 +77,7 @@ import { tmpdir, availableParallelism } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as yaml from 'js-yaml';
 import { pass, fail, warn, stripJsComments, run, runRejects, runAcrossUtcDay, runAcrossLocalDay, lastRunFailure, formatRunFailure, fileExists, finish, results, absorbResults, importSuiteContained, linkNodeModules, ROOT, QUICK, NODE, DEFAULT_SCRIPT_TIMEOUT_MS, getBash, toBashPath, hermeticGitEnv, pinSandboxDataRoot, exitOnInterrupt, ownRootEnv } from './tests/helpers.mjs';
+import { checkGitignore } from './fork/gitignore-check.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { REQUIRED_TOOL_ENV, declaresTool } from './tests/required-tools.mjs';
 import { collectMjsFiles } from './lib/mjs-files.mjs';
@@ -949,6 +950,10 @@ const scripts = [
   { name: 'update-system.mjs check', expectExit: 0 },
   { name: 'seed-fixture.mjs --self-test', expectExit: 0 },
   { name: 'archive-posting.mjs --help', expectExit: 0 },
+  // Fork-local self-tests (see LOCAL-CHANGES.md).
+  { name: 'system-check.mjs --self-test', expectExit: 0 },
+  { name: 'upskill-ext.mjs --self-test', expectExit: 0 },
+  { name: 'verify-evaluation.mjs --self-test', expectExit: 0 },
 ];
 
 const scriptTmp = mkdtempSync(join(ROOT, SCRATCH_PREFIX));
@@ -16532,8 +16537,11 @@ for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/RE
 // Real session files contain real names/companies — they MUST be gitignored.
 {
   const real = 'interview-prep/sessions/acme-corp-instructional-designer-behavioral-2026-06-01.md';
-  if (run('git', ['check-ignore', real])) {
+  const result = checkGitignore(real);
+  if (result.status === 'ignored') {
     pass('Real session files are gitignored (PII never committed)');
+  } else if (result.status === 'error') {
+    fail(`Could not evaluate .gitignore for real session file: ${result.detail}`);
   } else {
     fail(`Real session file is NOT gitignored: ${real}`);
   }
@@ -16541,8 +16549,11 @@ for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/RE
 
 // ...but the scaffold itself must be force-included past that ignore rule.
 for (const f of ['interview-prep/sessions/.gitkeep', 'interview-prep/sessions/README.md']) {
-  if (run('git', ['check-ignore', f])) {
+  const result = checkGitignore(f);
+  if (result.status === 'ignored') {
     fail(`Session scaffold is gitignored (won't ship): ${f}`);
+  } else if (result.status === 'error') {
+    fail(`Could not evaluate .gitignore for session scaffold ${f}: ${result.detail}`);
   } else {
     pass(`Session scaffold is force-included past the ignore rule: ${f}`);
   }
