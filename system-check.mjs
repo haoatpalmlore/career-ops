@@ -8,7 +8,7 @@
  *
  *   1. Does the local behaviour still hold? The fork's guarantees live partly
  *      in scripts (checkable) and partly in rules inside modes/_custom.md
- *      (a symlink into the data layer, which an update cannot touch — but a
+ *      (user layer, under the Data Root, which an update cannot touch — but a
  *      careless edit can). Both are asserted here.
  *   2. Did an upstream merge change anything? Snapshot before, rebase,
  *      snapshot after, diff. The diff names what moved instead of leaving the
@@ -130,9 +130,10 @@ async function runRegression() {
 function runInvariants() {
   const out = [];
   for (const r of REQUIRED_RULES) {
-    const p = join(HERE, r.file);
+    // modes/_custom.md is user layer, so it lives under the Data Root.
+    const p = join(getCareerOpsRoot(), r.file);
     if (process.env.CI && !existsSync(p)) {
-      out.push({ name: `${r.file} ${r.heading}`, ok: true, detail: 'user-layer file absent in clean CI checkout; verified on installed overlay by fork-sync doctor' });
+      out.push({ name: `${r.file} ${r.heading}`, ok: true, detail: 'user-layer file absent in clean CI checkout; verified against the Data Root locally' });
       continue;
     }
     const present = existsSync(p) && readFileSync(p, 'utf8').includes(r.heading);
@@ -147,9 +148,8 @@ function runInvariants() {
     '.github/workflows/test.yml': 'canonical tag bootstrap and fork-specific CI gate',
     '.github/workflows/signature-ci.yml': 'signature-only validator skips ordinary fork integration PRs',
     'AGENTS.md': 'fork-safe GitHub CLI repository targeting contract, justified in LOCAL-CHANGES.md',
-    'test-all.mjs': 'symlink-safe gitignore assertions for the external-data overlay; fork self-tests registered in the scripts list',
+    'test-all.mjs': 'fork self-tests registered in the scripts list',
     'tests/helpers.mjs': 'documented CodeQL suppression for the executable-allowlisted argv-only test runner',
-    'generate-pdf.mjs': 'manifest paths accept both code and managed data-overlay namespaces',
     'verify-pipeline.mjs': 'tracker overrides isolate sibling user-layer files in fixtures',
   };
   try {
