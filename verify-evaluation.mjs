@@ -270,7 +270,8 @@ if (isMainModule(import.meta.url)) {
   } else {
     const f = argv.find(a => !a.startsWith('--'));
     if (!f) { console.error('usage: node verify-evaluation.mjs <report.md> | --all | --self-test'); process.exit(1); }
-    const path = existsSync(f) ? f : join(REPORTS_DIR, f);
+    // A bare filename, a reports/... path under the Data Root, or any existing path.
+    const path = [f, join(getCareerOpsRoot(), f), join(REPORTS_DIR, f)].find(existsSync) || f;
     if (!existsSync(path)) { console.error(`not found: ${f}`); process.exit(1); }
     const r = verify(readFileSync(path, 'utf8'), basename(path));
     printOne(r);

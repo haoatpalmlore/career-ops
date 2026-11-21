@@ -19,18 +19,33 @@ Run `node system-check.mjs` to assert all of this still holds.
 | `WORKED-EXAMPLE.md` | **new** | none | The reproducible trace. Kept at repo root, **not** under `docs/` — `docs/` is a `SYSTEM_PATHS` prefix, and a fork file must not sit inside one. |
 | `regression/` | **new** | none | Eight fixtures, each a real failure this system made. |
 | `upskill.mjs` | **modified** | **the only real one** | `+51 -6` against v1.40.0 — integration seams only (thread `archetype` through, accept a relevance function, delegate `--requirements`). Was `+195` before the extraction. |
-| `modes/_custom.md` | symlink | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives in the data layer, outside the repo — an update cannot reach it. |
-| `data/application-log.tsv` | symlink | none | User layer. |
+| `modes/_custom.md` | user layer | **none** | Scoring Rules, The Case Against, Falsification, Enforcement. Lives under the Data Root, outside the repo — an update cannot reach it. |
+| `data/application-log.tsv` | user layer | none | Under the Data Root. |
 | `fork/owned-paths.txt` | **new** | none | Versioned ownership manifest; `fork-sync doctor`/`setup` generates ignored `config/local-paths.txt`, upstream's declared local user layer. See below. |
-| `fork-sync.mjs` | **new** | none | Transactional external-data overlay manager (`doctor`, `start`, `continue`, `abort`). |
+| `fork-sync.mjs` | **new** | none | `setup` writes `config/local-paths.txt`; `doctor` also checks the Data Root is the external data repo. See "User data" below. |
 | `fork/fork-sync-check.mjs` | **new** | none | fork-sync regression checks, run by the `fork-invariants` CI job. Not named `*.test.mjs`: v1.40 fails any such file outside `tests/`. |
 | `.github/workflows/upstream-sync.yml` | **new** | low | Weekly reviewed, never-auto-merged upstream sync proposal. |
 | `.github/workflows/test.yml` | **modified** | low | Fetches canonical tags and runs fork invariants. |
 | `.github/workflows/signature-ci.yml` | **modified** | low | Makes the signature-only validator a no-op for ordinary integration PRs. |
 | `AGENTS.md` | **modified** | low | Fork-safe GitHub CLI targeting: resolve shorthand PR/issue references from `origin`, preflight mutations, and explicitly qualify every repository target. |
-| `test-all.mjs` | **modified** | low | Imports `checkGitignore` from `fork/gitignore-check.mjs`, and registers the `--self-test` of `system-check`, `upskill-ext` and `verify-evaluation` in the `scripts` list (v1.40 fails any self-test nothing launches). |
+| `test-all.mjs` | **modified** | low | `+4`: registers the `--self-test` of `system-check`, `upskill-ext` and `verify-evaluation` in the `scripts` list (v1.40 fails any self-test nothing launches). |
 | `tests/helpers.mjs` | **modified** | low | Comment-only: documents why `run()` is safe, for the CodeQL handover below. |
-| `generate-pdf.mjs`, `verify-pipeline.mjs` | **modified** | low | Data Root adoption, recovered after the 2026-09-01 rebase dropped them. |
+| `verify-pipeline.mjs` | **modified** | low | A `CAREER_OPS_TRACKER` override also relocates the sibling `active-interviews.md` / `follow-ups.md`. A candidate to send upstream. |
+
+## User data: the Data Root, not symlinks
+
+Since 2026-11-22 the user layer is reached through upstream's Data Root: a gitignored
+`.career-ops-data` marker in the checkout names `../career-ops-data` (see
+`DATA_CONTRACT.md`, "Custom Data Directory"). Before that, whole-directory symlinks made the
+data look local. They needed skip-worktree on every upstream placeholder behind them, a
+transactional `fork-sync start|continue|abort` around each update, a symlink-safe
+`.gitignore` evaluator in `test-all.mjs`, and a second path namespace in
+`generate-pdf.mjs`. All of that is gone. An update is now a plain `git switch` or
+`git merge`, because nothing of the user's lives in the worktree.
+
+One upstream script still ignores the Data Root: `agent-inbox.mjs` reads
+`data/agent-inbox.md` relative to the working directory. Set `CAREER_OPS_INBOX` to the data
+repo's copy; this checkout sets it in `.claude/settings.local.json`.
 
 ## Why the fork files are declared in `config/local-paths.txt`, not `SYSTEM_PATHS`
 
@@ -81,8 +96,8 @@ If any of these files are ever merged upstream, move them to `SYSTEM_PATHS` at t
 ## Why the rules are not in `modes/oferta.md`
 
 `modes/oferta.md` and `batch/batch-prompt.md` are in-repo system-layer files that upstream
-rewrites. Rules placed there are lost on the next update. `modes/_custom.md` is a symlink
-into the data layer and is the documented home for procedural house rules — see the Data
+rewrites. Rules placed there are lost on the next update. `modes/_custom.md` lives under
+the Data Root and is the documented home for procedural house rules — see the Data
 Contract in `AGENTS.md`. Everything behavioural therefore lives there, and the enforcement
 lives in new `.mjs` files.
 
@@ -117,8 +132,8 @@ side by side. Append fork parameters after upstream's; never reorder theirs.
 
 `tests/user-layer-gitignored.test.mjs` was a fork seam until v1.40.0, when upstream made
 the test symlink-aware itself (`checkIgnoreThroughSymlinks`, #3165). The rebase took
-upstream's version and dropped the seam. `fork/gitignore-check.mjs` stays, since
-`test-all.mjs` still uses it.
+upstream's version and dropped the seam. `fork/gitignore-check.mjs` went with the symlinks
+on 2026-11-22.
 
 `AGENTS.md` and `test-all.mjs` are also intentional upstream-file
 edits. They are narrow guard/registration seams, but an upstream edit to the same regions
