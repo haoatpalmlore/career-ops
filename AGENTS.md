@@ -580,34 +580,13 @@ This is a confirmation step, not a replacement for `check-liveness.mjs` — run 
 
 ### GitHub CLI Repository Targeting (CRITICAL)
 
-Fork checkouts commonly have `origin` pointing to the user's fork and `upstream` pointing to the canonical project. **Never let an unqualified `gh` command infer which repository a PR or issue belongs to.** A PR number is only unique within a repository.
+In a fork, `origin` is the user's fork and `upstream` the canonical project, and a PR number is only unique within one repository. Never let `gh` infer the repository.
 
-1. **Resolve the repository before reading or writing.** If the user supplied `owner/repo#123` or a full GitHub URL, use that exact repository. If they supplied only `#123` or `PR 123`, resolve the target from `git remote get-url origin` — never from `upstream` and never from whichever repository `gh` happens to consider the default.
-2. **Preflight every mutation.** Before commenting, reviewing, closing, reopening, labeling, merging, or otherwise changing GitHub state, run a read-only lookup with an explicit repository and inspect the returned `url`:
-   ```bash
-   git remote get-url origin
-   gh pr view 123 --repo {origin-owner}/{repo} --json url,title,state,headRefOid
-   ```
-   The URL must show the intended owner and repository. If the requested repository cannot be resolved, or it unexpectedly differs from `origin`, stop and ask the user instead of falling back to `upstream`.
-3. **Qualify every GitHub command.** Include `--repo {owner}/{repo}` on every `gh pr`, `gh issue`, `gh release`, and `gh api` operation. For `gh api`, the endpoint itself must also contain the verified owner/repository. Do not use bare commands such as `gh pr view 123` or `gh pr comment 123`.
-4. **Pin the checkout as defense in depth.** After verifying `origin`, set the local GitHub CLI default with `gh repo set-default {origin-owner}/{repo}`. This is a fallback guard only; it does not replace explicit `--repo`.
-5. **Keep loop identity fully qualified.** Reviewer/worker loops must store and report `{owner}/{repo}#123`, not only `PR 123`. Re-run the preflight before the first write of every new review round.
-
-Examples for a checkout whose `origin` is `https://github.com/alice/career-ops.git`:
-
-```bash
-# Safe reads
-gh pr view 2 --repo alice/career-ops --json url,title,state,headRefOid
-gh pr diff 2 --repo alice/career-ops
-
-# Safe writes (only after checking the URL above)
-gh pr comment 2 --repo alice/career-ops --body "change needed"
-gh issue create --repo alice/career-ops --title "Bug: ..." --body "..."
-
-# Unsafe: repository target is implicit and may resolve to upstream
-gh pr view 2
-gh pr comment 2 --body "merge permited"
-```
+1. **Resolve first.** Use an explicit `owner/repo#N` or URL as given; resolve a bare `#N` from `git remote get-url origin`, never from `upstream` or `gh`'s default.
+2. **Preflight every mutation** (comment, review, close, label, merge): `gh pr view N --repo {owner}/{repo} --json url,title,state,headRefOid` and check the URL. If it can't be resolved or differs from `origin`, stop and ask.
+3. **Qualify every command.** `--repo {owner}/{repo}` on every `gh pr|issue|release|api` call; a `gh api` endpoint names the verified repository too. Never `gh pr view 2` bare.
+4. **Pin as a fallback.** `gh repo set-default {origin-owner}/{repo}` after verifying `origin`. It never replaces `--repo`.
+5. **Loops keep full identity.** Reviewer/worker loops record `{owner}/{repo}#N` and re-run the preflight before each round's first write.
 
 ## Community asks (one at a time, once each)
 
